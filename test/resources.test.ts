@@ -209,6 +209,12 @@ describe('toCreatedEndpoint', () => {
   });
 
   it('keeps the redaction hook off enumerable keys', () => {
-    expect(Object.keys(toCreatedEndpoint(raw))).toEqual(['id', 'url', 'secret']);
+    const endpoint = toCreatedEndpoint(raw);
+    expect(Object.keys(endpoint)).toEqual(['id', 'url', 'secret']);
+    const descriptor = Object.getOwnPropertyDescriptor(
+      endpoint,
+      Symbol.for('nodejs.util.inspect.custom'),
+    );
+    expect(descriptor?.enumerable).toBe(false);
   });
 });

@@ -77,6 +77,20 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
   CreateEndpointOutputBody: ['id', 'url', 'secret'],
   DeliveryItem: ['id', 'event_type', 'attempt', 'status_code', 'error', 'created_at'],
   TxMatchInputBody: ['intent_id'],
+  TxSummaryOutputBody: [
+    'count',
+    'credit_total',
+    'credit_matched_total',
+    'debit_total',
+    'from',
+    'to',
+    'match_counts',
+    'prev',
+    'days',
+    'connections',
+  ],
+  ConnSummaryOutputBody: ['from', 'to', 'connections'],
+  BankCapabilities: ['supports_balance', 'supports_debit'],
 };
 
 interface Spec {

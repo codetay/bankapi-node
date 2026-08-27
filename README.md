@@ -67,9 +67,7 @@ app.post(
 );
 ```
 
-The middleware reads the raw body itself, so it works whether or not
-`express.json()` or `express.raw()` is mounted globally. An unverified request
-is answered with `400` and never reaches the handler.
+The middleware reuses a raw `Buffer` or string body captured by an earlier `express.raw()`, and reads the request stream itself when nothing captured it. Do not let `express.json()` parse the webhook route: a parsed body cannot be verified, so every delivery would be rejected. Mount the webhook route before `express.json()`, or scope that parser away from this route. An unverified request is answered with `400`, a self-read body larger than 1 MiB with `413`; neither reaches the handler.
 
 ### Fastify
 

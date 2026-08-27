@@ -65,6 +65,8 @@ export class Transport {
         return await this.decode(response, true);
       }
       if ((response.status === 429 || response.status >= 500) && this.canRetry(method, attempt)) {
+        // An abandoned body keeps the socket allocated in undici — cancel it.
+        void response.body?.cancel();
         await this.backoff(++attempt);
         continue;
       }
