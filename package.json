@@ -4,6 +4,14 @@
   "description": "BankAPI.VN Node.js SDK — API client and webhook signature verification",
   "license": "MIT",
   "author": "BANKAPI.VN",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codetay/bankapi-node.git"
+  },
+  "bugs": {
+    "url": "https://github.com/codetay/bankapi-node/issues"
+  },
+  "homepage": "https://github.com/codetay/bankapi-node#readme",
   "keywords": [
     "bankapi",
     "banking",
@@ -16,6 +24,7 @@
   "engines": {
     "node": ">=20"
   },
+  "sideEffects": false,
   "files": [
     "dist"
   ],
