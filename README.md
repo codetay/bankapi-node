@@ -1,4 +1,4 @@
-# @bankapi/node
+# @codetay/bankapi-node
 
 Node.js SDK for [BANKAPI.VN](https://bankapi.vn) — API client and webhook
 signature verification. Zero runtime dependencies, ESM and CommonJS, Node 20+.
@@ -6,13 +6,13 @@ signature verification. Zero runtime dependencies, ESM and CommonJS, Node 20+.
 ## Install
 
 ```bash
-npm install @bankapi/node
+npm install @codetay/bankapi-node
 ```
 
 ## Quickstart
 
 ```ts
-import { BankApi } from '@bankapi/node';
+import { BankApi } from '@codetay/bankapi-node';
 
 const client = new BankApi(process.env.BANKAPI_KEY!);
 
@@ -39,7 +39,7 @@ verification runs over the exact bytes the server signed, so a body that has
 already been through `JSON.parse` cannot be verified.
 
 ```ts
-import { constructEvent } from '@bankapi/node';
+import { constructEvent } from '@codetay/bankapi-node';
 
 const event = constructEvent(rawBody, request.headers, process.env.BANKAPI_WEBHOOK_SECRET!);
 // event.type, event.deliveryId, event.timestamp, event.data
@@ -53,7 +53,7 @@ via `{ tolerance }`).
 
 ```ts
 import express from 'express';
-import { bankapiWebhook } from '@bankapi/node/express';
+import { bankapiWebhook } from '@codetay/bankapi-node/express';
 
 const app = express();
 

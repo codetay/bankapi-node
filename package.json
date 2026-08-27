@@ -1,5 +1,5 @@
 {
-  "name": "@bankapi/node",
+  "name": "@codetay/bankapi-node",
   "version": "0.1.0",
   "description": "BankAPI.VN Node.js SDK — API client and webhook signature verification",
   "license": "MIT",
