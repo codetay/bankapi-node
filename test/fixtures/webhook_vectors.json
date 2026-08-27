@@ -1,0 +1,30 @@
+[
+  {
+    "secret": "whsec_dGVzdC1zZWNyZXQtMDE",
+    "delivery_id": "018f2a4e-1111-7000-8000-000000000001",
+    "timestamp": "1735689600",
+    "body": "{\"event\":\"bank.credit\",\"data\":{\"amount\":150000,\"bank\":\"ocb\",\"description\":\"thanh toan don hang\",\"va_number\":\"9704xx\"}}",
+    "signature_header": "sha256=f8278b2df2a870e49216350c381c3341275a7e93fde54aab1589dfbc79b4fefe"
+  },
+  {
+    "secret": "whsec_dGVzdC1zZWNyZXQtMDI",
+    "delivery_id": "018f2a4e-2222-7000-8000-000000000002",
+    "timestamp": "1735689601",
+    "body": "{\"event\":\"bank.payment.matched\",\"data\":{\"amount\":99000,\"code\":\"PN-42\"}}",
+    "signature_header": "sha256=236cafe931059bc7a223f35a920e04781dfa2a29ab5d1515e8d759a08be719ea"
+  },
+  {
+    "secret": "whsec_unicode",
+    "delivery_id": "018f2a4e-3333-7000-8000-000000000003",
+    "timestamp": "1735689602",
+    "body": "{\"event\":\"org.created\",\"data\":{\"note\":\"Tổ chức đã tạo — tiếng Việt ✓\"}}",
+    "signature_header": "sha256=6510d250db373275a2881e228868339b4c789522b3647e18ccf573be50d8fb07"
+  },
+  {
+    "secret": "whsec_empty-data",
+    "delivery_id": "018f2a4e-4444-7000-8000-000000000004",
+    "timestamp": "1735689603",
+    "body": "{\"event\":\"noop\",\"data\":{}}",
+    "signature_header": "sha256=b6dde0498d6fe8ad071e13a8ec964bdc7d7e0857e10a543a26e35769945dc369"
+  }
+]

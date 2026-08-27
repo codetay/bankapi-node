@@ -10,3 +10,5 @@ export {
   SignatureVerificationError,
   ValidationError,
 } from './errors.js';
+export { constructEvent } from './webhook.js';
+export type { ConstructEventOptions, HeaderBag, WebhookEvent } from './webhook.js';
