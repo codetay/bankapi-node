@@ -8,4 +8,10 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   target: 'node20',
+  splitting: false,
+  outDir: 'dist',
+  outExtension: ({ format }) => ({
+    js: format === 'esm' ? '.js' : '.cjs',
+    dts: format === 'esm' ? '.d.ts' : '.d.cts',
+  }),
 });

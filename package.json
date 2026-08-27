@@ -53,11 +53,11 @@
     "format:check": "prettier --check .",
     "sync-spec": "cp ../GO-KIT/api/openapi.json test/fixtures/openapi.json",
     "sync-vectors": "cd ../GO-KIT && WEBHOOK_VECTORS_OUT=../SDK-NODE/test/fixtures/webhook_vectors.json go test ./internal/modules/connector/transport/httpwebhook/ -run TestWriteGoldenVectors -count=1",
-    "check:package": "npm run build && publint && attw --pack .",
+    "check:package": "npm run build && publint && attw --pack . --profile node16",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
-    "@arethetypeswrong/cli": "^0.17.4",
+    "@arethetypeswrong/cli": "^0.18.5",
     "@types/node": "^20.19.43",
     "prettier": "^3.9.6",
     "publint": "^0.2.12",
