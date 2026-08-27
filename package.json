@@ -1,0 +1,68 @@
+{
+  "name": "@bankapi/node",
+  "version": "0.1.0",
+  "description": "BankAPI.VN Node.js SDK — API client and webhook signature verification",
+  "license": "MIT",
+  "author": "BANKAPI.VN",
+  "keywords": [
+    "bankapi",
+    "banking",
+    "sdk",
+    "api-client",
+    "webhook",
+    "vietnam"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./express": {
+      "import": {
+        "types": "./dist/express.d.ts",
+        "default": "./dist/express.js"
+      },
+      "require": {
+        "types": "./dist/express.d.cts",
+        "default": "./dist/express.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "sync-spec": "cp ../GO-KIT/api/openapi.json test/fixtures/openapi.json",
+    "sync-vectors": "cd ../GO-KIT && WEBHOOK_VECTORS_OUT=../SDK-NODE/test/fixtures/webhook_vectors.json go test ./internal/modules/connector/transport/httpwebhook/ -run TestWriteGoldenVectors -count=1",
+    "check:package": "npm run build && publint && attw --pack .",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.17.4",
+    "@types/node": "^20.19.43",
+    "prettier": "^3.9.6",
+    "publint": "^0.2.12",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
+  }
+}
