@@ -208,13 +208,17 @@ describe('toCreatedEndpoint', () => {
     expect(printed).toContain('***redacted***');
   });
 
-  it('keeps the redaction hook off enumerable keys', () => {
+  it('redacts the secret in JSON.stringify output', () => {
+    const serialized = JSON.stringify(toCreatedEndpoint(raw));
+    expect(serialized).not.toContain('whsec_supersecret');
+    expect(serialized).toContain('***redacted***');
+  });
+
+  it('keeps the redaction hooks off enumerable keys', () => {
     const endpoint = toCreatedEndpoint(raw);
     expect(Object.keys(endpoint)).toEqual(['id', 'url', 'secret']);
-    const descriptor = Object.getOwnPropertyDescriptor(
-      endpoint,
-      Symbol.for('nodejs.util.inspect.custom'),
-    );
-    expect(descriptor?.enumerable).toBe(false);
+    for (const key of [Symbol.for('nodejs.util.inspect.custom'), 'toJSON'] as const) {
+      expect(Object.getOwnPropertyDescriptor(endpoint, key)?.enumerable).toBe(false);
+    }
   });
 });

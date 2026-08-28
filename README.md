@@ -147,7 +147,9 @@ client.webhookEndpoints.deliveries(id, { limit, cursor });
 ```
 
 `create()` is the only call that ever returns the endpoint's signing secret —
-store it immediately. The object redacts the secret from `console.log` output.
+store it immediately. The object redacts the secret from `console.log` and
+`JSON.stringify` output (a literal `***redacted***` marker) — persist it by
+reading `.secret` explicitly.
 
 ## Development
 

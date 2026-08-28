@@ -3,6 +3,19 @@ import { VERSION } from './version.js';
 
 export type QueryValue = string | number | undefined;
 
+const MAX_RETRY_AFTER_MS = 60_000;
+
+/**
+ * Server-hinted retry delay from a Retry-After header, capped at 60s.
+ * Only the delta-seconds form is honored; the HTTP-date form falls back to
+ * the formula backoff.
+ */
+function retryAfterMs(headers: Headers): number | undefined {
+  const raw = headers.get('retry-after')?.trim();
+  if (raw === undefined || !/^\d+$/.test(raw)) return undefined;
+  return Math.min(Number(raw) * 1000, MAX_RETRY_AFTER_MS);
+}
+
 export interface TransportOptions {
   apiKey: string;
   baseUrl: string;
@@ -67,7 +80,10 @@ export class Transport {
       if ((response.status === 429 || response.status >= 500) && this.canRetry(method, attempt)) {
         // An abandoned body keeps the socket allocated in undici — cancel it.
         void response.body?.cancel();
-        await this.backoff(++attempt);
+        attempt += 1;
+        const hinted = retryAfterMs(response.headers);
+        if (hinted === undefined) await this.backoff(attempt);
+        else await this.sleep(hinted);
         continue;
       }
 

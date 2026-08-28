@@ -206,6 +206,14 @@ export function toCreatedEndpoint(raw: Record<string, unknown>): CreatedEndpoint
     value: () => ({ id: endpoint.id, url: endpoint.url, secret: '***redacted***' }),
     enumerable: false,
   });
+  // JSON.stringify follows the same rule: serialized copies land in logs and
+  // crash dumps far more often than deliberate persistence, and the literal
+  // marker makes the redaction visible instead of silently dropping the key.
+  // Persisting the secret requires reading `.secret` explicitly.
+  Object.defineProperty(endpoint, 'toJSON', {
+    value: () => ({ id: endpoint.id, url: endpoint.url, secret: '***redacted***' }),
+    enumerable: false,
+  });
   return endpoint;
 }
 

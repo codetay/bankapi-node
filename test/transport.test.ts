@@ -173,6 +173,38 @@ describe('Transport retry policy', () => {
     expect((err as RateLimitError).retryAfter).toBe(9);
   });
 
+  it('honors a numeric Retry-After for the retry delay', async () => {
+    const { transport, sleep } = make([
+      jsonResponse({}, { status: 429, headers: { 'retry-after': '3' } }),
+      jsonResponse({ ok: 1 }),
+    ]);
+    await transport.request('GET', '/banking/summary');
+    expect(sleep).toHaveBeenCalledWith(3000);
+  });
+
+  it('caps the Retry-After delay at 60s', async () => {
+    const { transport, sleep } = make([
+      jsonResponse({}, { status: 429, headers: { 'retry-after': '999' } }),
+      jsonResponse({ ok: 1 }),
+    ]);
+    await transport.request('GET', '/banking/summary');
+    expect(sleep).toHaveBeenCalledWith(60_000);
+  });
+
+  it('falls back to formula backoff on a non-numeric Retry-After', async () => {
+    const { transport, sleep } = make([
+      jsonResponse(
+        {},
+        { status: 429, headers: { 'retry-after': 'Wed, 21 Oct 2026 07:28:00 GMT' } },
+      ),
+      jsonResponse({ ok: 1 }),
+    ]);
+    await transport.request('GET', '/banking/summary');
+    const delay = sleep.mock.calls[0]![0] as number;
+    expect(delay).toBeGreaterThanOrEqual(200);
+    expect(delay).toBeLessThanOrEqual(300);
+  });
+
   it('backs off longer on each attempt', async () => {
     const { transport, sleep } = make([
       jsonResponse({}, { status: 500 }),
