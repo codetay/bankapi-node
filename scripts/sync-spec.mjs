@@ -15,6 +15,9 @@ const FIXTURE_PATH = resolve(ROOT, 'test/fixtures/openapi.json');
 const LOCK_PATH = resolve(ROOT, 'test/fixtures/openapi.lock.json');
 const ERROR_CODES_PATH = resolve(ROOT, 'src/error-codes.ts');
 const SPEC_PATH_IN_GOKIT = 'api/openapi.json';
+// The spec is well under 1 MB today, but a generous cap costs nothing and
+// avoids a cryptic ENOBUFS if it grows.
+const MAX_BUFFER = 64 * 1024 * 1024;
 
 function parseArgs(argv) {
   let ref;
@@ -53,10 +56,15 @@ function main() {
     process.exit(2);
   }
 
-  const sha = execFileSync('git', ['rev-parse', ref], { cwd: gokitDir, encoding: 'utf8' }).trim();
+  const sha = execFileSync('git', ['rev-parse', '--verify', ref], {
+    cwd: gokitDir,
+    encoding: 'utf8',
+    maxBuffer: MAX_BUFFER,
+  }).trim();
   const spec = execFileSync('git', ['show', `${sha}:${SPEC_PATH_IN_GOKIT}`], {
     cwd: gokitDir,
     encoding: 'utf8',
+    maxBuffer: MAX_BUFFER,
   });
 
   mkdirSync(dirname(FIXTURE_PATH), { recursive: true });

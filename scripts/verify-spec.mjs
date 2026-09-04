@@ -14,6 +14,9 @@ const FIXTURE_PATH = resolve(ROOT, 'test/fixtures/openapi.json');
 const LOCK_PATH = resolve(ROOT, 'test/fixtures/openapi.lock.json');
 const ERROR_CODES_PATH = resolve(ROOT, 'src/error-codes.ts');
 const SPEC_PATH_IN_GOKIT = 'api/openapi.json';
+// The spec is well under 1 MB today, but a generous cap costs nothing and
+// avoids a cryptic ENOBUFS if it grows.
+const MAX_BUFFER = 64 * 1024 * 1024;
 
 function resolveGokitDir() {
   const dir = process.env.GOKIT_DIR ?? resolve(ROOT, '../GO-KIT');
@@ -33,6 +36,10 @@ function main() {
     console.error(`Missing ${LOCK_PATH}. Run npm run sync-spec.`);
     process.exit(1);
   }
+  if (!existsSync(FIXTURE_PATH)) {
+    console.error(`Missing ${FIXTURE_PATH}. Run npm run sync-spec.`);
+    process.exit(1);
+  }
   const lock = JSON.parse(readFileSync(LOCK_PATH, 'utf8'));
   const fixture = readFileSync(FIXTURE_PATH, 'utf8');
   const sha256 = createHash('sha256').update(fixture).digest('hex');
@@ -47,6 +54,7 @@ function main() {
   const upstream = execFileSync('git', ['show', `${lock.gokit_ref}:${SPEC_PATH_IN_GOKIT}`], {
     cwd: gokitDir,
     encoding: 'utf8',
+    maxBuffer: MAX_BUFFER,
   });
 
   if (upstream !== fixture) {
