@@ -43,7 +43,7 @@ describe('create', () => {
 
   const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-  it('sends a server-generated UUID as Idempotency-Key when no options are given', async () => {
+  it('sends an SDK-generated UUID as Idempotency-Key when no options are given', async () => {
     const { service, stub } = make([jsonResponse({ id: 'wh_1' })]);
     await service.create('https://shop.test/hook', ['bank.credit']);
     expect(stub.calls[0]!.headers.get('idempotency-key')).toMatch(UUID_V4);

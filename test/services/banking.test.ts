@@ -183,7 +183,7 @@ describe('createPaymentIntent', () => {
     });
   });
 
-  it('sends a server-generated UUID as Idempotency-Key when none is given', async () => {
+  it('sends an SDK-generated UUID as Idempotency-Key when none is given', async () => {
     const { service, stub } = make([jsonResponse({ id: 'pi_1' })]);
     await service.createPaymentIntent({ code: 'PN-1', expectedAmount: 99000 });
     expect(stub.calls[0]!.headers.get('idempotency-key')).toMatch(UUID_V4);
