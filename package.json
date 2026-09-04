@@ -60,7 +60,8 @@
     "test": "vitest run",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "sync-spec": "cp ../GO-KIT/api/openapi.json test/fixtures/openapi.json",
+    "sync-spec": "node scripts/sync-spec.mjs",
+    "verify-spec": "node scripts/verify-spec.mjs",
     "sync-vectors": "cd ../GO-KIT && WEBHOOK_VECTORS_OUT=../SDK-NODE/test/fixtures/webhook_vectors.json go test ./internal/modules/connector/transport/httpwebhook/ -run TestWriteGoldenVectors -count=1",
     "check:package": "npm run build && publint && attw --pack . --profile node16",
     "prepublishOnly": "npm run build"
