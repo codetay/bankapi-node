@@ -7,10 +7,12 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { renderErrorCodes } from './lib/error-codes.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURE_PATH = resolve(ROOT, 'test/fixtures/openapi.json');
 const LOCK_PATH = resolve(ROOT, 'test/fixtures/openapi.lock.json');
+const ERROR_CODES_PATH = resolve(ROOT, 'src/error-codes.ts');
 const SPEC_PATH_IN_GOKIT = 'api/openapi.json';
 
 function resolveGokitDir() {
@@ -51,6 +53,15 @@ function main() {
     console.error(
       `test/fixtures/openapi.json no longer matches GO-KIT@${lock.gokit_ref}. Run npm run sync-spec.`,
     );
+    process.exit(1);
+  }
+
+  const expectedErrorCodes = renderErrorCodes(JSON.parse(fixture));
+  const actualErrorCodes = existsSync(ERROR_CODES_PATH)
+    ? readFileSync(ERROR_CODES_PATH, 'utf8')
+    : '';
+  if (actualErrorCodes !== expectedErrorCodes) {
+    console.error('src/error-codes.ts is stale. Run npm run gen:error-codes.');
     process.exit(1);
   }
 

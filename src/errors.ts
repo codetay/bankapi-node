@@ -1,3 +1,5 @@
+import { ERROR_CODES, type ErrorCode } from './error-codes.js';
+
 /** Extra context threaded through every BankApiError subclass constructor. */
 export interface BankApiErrorOptions {
   cause?: unknown;
@@ -85,6 +87,17 @@ export class SignatureVerificationError extends Error {
     super(message);
     this.name = 'SignatureVerificationError';
   }
+}
+
+const KNOWN_ERROR_CODES = new Set<string>(ERROR_CODES);
+
+/**
+ * Narrows a BankApiError#code (typed `string | undefined` since a server can
+ * roll out a new registry entry before this SDK is regenerated) to the
+ * `ErrorCode` union pinned from the registry at build time.
+ */
+export function isErrorCode(code: string | undefined): code is ErrorCode {
+  return code !== undefined && KNOWN_ERROR_CODES.has(code);
 }
 
 const ERROR_CODE_PREFIX = 'urn:bankapi:error:';

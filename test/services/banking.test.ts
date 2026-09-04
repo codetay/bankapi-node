@@ -156,3 +156,61 @@ describe('paymentIntents', () => {
     expect(page.items[0]!.expectedAmount).toBe(99000);
   });
 });
+
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+describe('createPaymentIntent', () => {
+  it('posts the snake_case body without expires_in_secs when omitted', async () => {
+    const { service, stub } = make([
+      jsonResponse({ id: 'pi_1', code: 'PN-1', expected_amount: 99000, status: 'pending' }),
+    ]);
+    const intent = await service.createPaymentIntent({ code: 'PN-1', expectedAmount: 99000 });
+    const call = stub.calls[0]!;
+    expect(call.method).toBe('POST');
+    expect(call.url).toBe('https://api.bankapi.vn/v1/banking/payment-intents');
+    expect(JSON.parse(call.body!)).toEqual({ code: 'PN-1', expected_amount: 99000 });
+    expect(intent.id).toBe('pi_1');
+    expect(intent.status).toBe('pending');
+  });
+
+  it('includes expires_in_secs when given', async () => {
+    const { service, stub } = make([jsonResponse({ id: 'pi_1' })]);
+    await service.createPaymentIntent({ code: 'PN-1', expectedAmount: 99000, expiresInSecs: 900 });
+    expect(JSON.parse(stub.calls[0]!.body!)).toEqual({
+      code: 'PN-1',
+      expected_amount: 99000,
+      expires_in_secs: 900,
+    });
+  });
+
+  it('sends a server-generated UUID as Idempotency-Key when none is given', async () => {
+    const { service, stub } = make([jsonResponse({ id: 'pi_1' })]);
+    await service.createPaymentIntent({ code: 'PN-1', expectedAmount: 99000 });
+    expect(stub.calls[0]!.headers.get('idempotency-key')).toMatch(UUID_V4);
+  });
+
+  it('sends the caller-supplied Idempotency-Key when given', async () => {
+    const { service, stub } = make([jsonResponse({ id: 'pi_1' })]);
+    await service.createPaymentIntent(
+      { code: 'PN-1', expectedAmount: 99000 },
+      { idempotencyKey: 'order-1042-attempt-1' },
+    );
+    expect(stub.calls[0]!.headers.get('idempotency-key')).toBe('order-1042-attempt-1');
+  });
+});
+
+describe('paymentIntent', () => {
+  it('reads one payment intent by id', async () => {
+    const { service, stub } = make([jsonResponse({ id: 'pi_1', code: 'PN-1', status: 'matched' })]);
+    const intent = await service.paymentIntent('pi_1');
+    expect(stub.calls[0]!.method).toBe('GET');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/banking/payment-intents/pi_1');
+    expect(intent.status).toBe('matched');
+  });
+
+  it('url-encodes the intent id', async () => {
+    const { service, stub } = make([jsonResponse({ id: 'pi/1' })]);
+    await service.paymentIntent('pi/1');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/banking/payment-intents/pi%2F1');
+  });
+});

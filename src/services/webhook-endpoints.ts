@@ -15,17 +15,31 @@ export interface EndpointListOptions {
   cursor?: string;
 }
 
+export interface CreateEndpointOptions {
+  /** Defaults to a generated crypto.randomUUID() when omitted. */
+  idempotencyKey?: string;
+}
+
 export class WebhookEndpointService {
   constructor(private readonly transport: Transport) {}
 
-  /** The returned secret is shown only here — store it before it is lost. */
-  async create(url: string, eventTypes: string[], description = ''): Promise<CreatedEndpoint> {
+  /**
+   * x-idempotent: retried with the same key, this replays the first response.
+   * The returned secret is shown only here — store it before it is lost.
+   */
+  async create(
+    url: string,
+    eventTypes: string[],
+    description = '',
+    options: CreateEndpointOptions = {},
+  ): Promise<CreatedEndpoint> {
     return toCreatedEndpoint(
       await this.transport.request(
         'POST',
         '/webhooks',
         {},
         { url, event_types: eventTypes, description },
+        { idempotencyKey: options.idempotencyKey ?? crypto.randomUUID() },
       ),
     );
   }

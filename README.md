@@ -30,7 +30,55 @@ for await (const tx of await client.banking.transactions({ matchStatus: 'unmatch
 ```
 
 The base URL defaults to `https://api.bankapi.vn` and must be `https` — plain
-`http` is accepted only for loopback hosts during local development.
+`http` is accepted only for loopback hosts during local development. For an
+org-specific host, pass `baseUrl: 'https://acme.bankapi.vn'` — the origin
+only; the SDK appends `/v1` itself, so a `baseUrl` that already ends in
+`/v1` throws instead of silently doubling it.
+
+## Payment intents
+
+`createPaymentIntent` and `webhookEndpoints.create` are idempotent: pass
+your own `idempotencyKey` to control retries explicitly, or omit it and the
+SDK generates one with `crypto.randomUUID()`. A retry with the same key and
+the same request body replays the first response instead of creating a
+second intent, and the SDK sets `error.replayed` to reflect it.
+
+```ts
+const intent = await client.banking.createPaymentIntent({
+  code: 'PN-1042',
+  expectedAmount: 150_000,
+  expiresInSecs: 900, // optional; server default when omitted
+});
+console.log(intent.id, intent.status);
+
+// Pass your own key so a retried request is guaranteed to replay, not double-create
+const retried = await client.banking.createPaymentIntent(
+  { code: 'PN-1042', expectedAmount: 150_000 },
+  { idempotencyKey: 'order-1042-attempt-1' },
+);
+
+const current = await client.banking.paymentIntent(intent.id);
+```
+
+`BankApiError#code` is the registry error code (`problem.type` with the
+`urn:bankapi:error:` prefix stripped), typed `string | undefined` since a
+server can roll out a new code before this SDK is regenerated. Use
+`isErrorCode` to narrow it to the known `ErrorCode` union:
+
+```ts
+import { BankApiError, isErrorCode } from '@codetay/bankapi-node';
+
+try {
+  await client.banking.createPaymentIntent(input, { idempotencyKey: key });
+} catch (err) {
+  if (err instanceof BankApiError) {
+    console.log(err.code, err.replayed); // e.g. "idempotency.key_reused", false
+    if (isErrorCode(err.code) && err.code === 'idempotency.in_progress') {
+      // the first request with this key is still executing — back off and retry
+    }
+  }
+}
+```
 
 ## Webhooks
 
@@ -137,8 +185,10 @@ client.banking.transactions({ limit, cursor, direction, connectionId, from, to, 
 client.banking.transaction(txId);
 client.banking.matchTransaction(txId, intentId);
 client.banking.paymentIntents({ status, limit, cursor });
+client.banking.createPaymentIntent({ code, expectedAmount, expiresInSecs }, { idempotencyKey });
+client.banking.paymentIntent(intentId);
 
-client.webhookEndpoints.create(url, eventTypes, description);
+client.webhookEndpoints.create(url, eventTypes, description, { idempotencyKey });
 client.webhookEndpoints.all({ limit, cursor });
 client.webhookEndpoints.get(id);
 client.webhookEndpoints.delete(id);

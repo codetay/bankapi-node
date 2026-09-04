@@ -37,6 +37,18 @@ export interface PaymentIntentListOptions {
   cursor?: string;
 }
 
+export interface CreatePaymentIntentInput {
+  code: string;
+  expectedAmount: number;
+  /** Intent TTL in seconds; omit for the server default. */
+  expiresInSecs?: number;
+}
+
+export interface CreatePaymentIntentOptions {
+  /** Defaults to a generated crypto.randomUUID() when omitted. */
+  idempotencyKey?: string;
+}
+
 export class BankingService {
   constructor(private readonly transport: Transport) {}
 
@@ -108,6 +120,33 @@ export class BankingService {
 
     return new Page(items(data).map(toPaymentIntent), nextCursor(data), (cursor) =>
       this.paymentIntents({ ...options, cursor }),
+    );
+  }
+
+  /** x-idempotent: retried with the same key, this replays the first response. */
+  async createPaymentIntent(
+    input: CreatePaymentIntentInput,
+    options: CreatePaymentIntentOptions = {},
+  ): Promise<PaymentIntent> {
+    const body: Record<string, unknown> = {
+      code: input.code,
+      expected_amount: input.expectedAmount,
+    };
+    if (input.expiresInSecs !== undefined) body.expires_in_secs = input.expiresInSecs;
+
+    return toPaymentIntent(
+      await this.transport.request('POST', '/banking/payment-intents', {}, body, {
+        idempotencyKey: options.idempotencyKey ?? crypto.randomUUID(),
+      }),
+    );
+  }
+
+  async paymentIntent(intentId: string): Promise<PaymentIntent> {
+    return toPaymentIntent(
+      await this.transport.request(
+        'GET',
+        `/banking/payment-intents/${encodeURIComponent(intentId)}`,
+      ),
     );
   }
 }

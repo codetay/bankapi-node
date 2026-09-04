@@ -8,10 +8,12 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { renderErrorCodes } from './lib/error-codes.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURE_PATH = resolve(ROOT, 'test/fixtures/openapi.json');
 const LOCK_PATH = resolve(ROOT, 'test/fixtures/openapi.lock.json');
+const ERROR_CODES_PATH = resolve(ROOT, 'src/error-codes.ts');
 const SPEC_PATH_IN_GOKIT = 'api/openapi.json';
 
 function parseArgs(argv) {
@@ -63,7 +65,10 @@ function main() {
   const sha256 = createHash('sha256').update(spec).digest('hex');
   writeFileSync(LOCK_PATH, `${JSON.stringify({ gokit_ref: sha, sha256 }, null, 2)}\n`);
 
+  writeFileSync(ERROR_CODES_PATH, renderErrorCodes(JSON.parse(spec)));
+
   console.log(`Synced test/fixtures/openapi.json from GO-KIT@${sha}`);
+  console.log('Regenerated src/error-codes.ts');
 }
 
 main();
