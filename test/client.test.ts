@@ -69,6 +69,9 @@ describe('base URL safety', () => {
 describe('baseUrl already under /v1', () => {
   it('rejects a baseUrl that already ends with /v1', () => {
     expect(() => new BankApi({ apiKey: 'k', baseUrl: 'https://acme.bankapi.vn/v1' })).toThrow(
+      TypeError,
+    );
+    expect(() => new BankApi({ apiKey: 'k', baseUrl: 'https://acme.bankapi.vn/v1' })).toThrow(
       'baseUrl must be the API origin (e.g. https://acme.bankapi.vn); the SDK appends /v1',
     );
   });

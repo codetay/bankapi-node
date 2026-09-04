@@ -69,7 +69,7 @@ function requireSecureBaseUrl(baseUrl: string): string {
 
   const trimmed = baseUrl.trim().replace(/\/+$/, '');
   if (trimmed.endsWith(API_VERSION_PATH)) {
-    throw new Error(
+    throw new TypeError(
       'baseUrl must be the API origin (e.g. https://acme.bankapi.vn); the SDK appends /v1',
     );
   }
