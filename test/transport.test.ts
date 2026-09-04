@@ -6,7 +6,7 @@ import {
   RateLimitError,
   ValidationError,
 } from '../src/errors.js';
-import { Transport } from '../src/transport.js';
+import { API_VERSION_PATH, Transport } from '../src/transport.js';
 import { VERSION } from '../src/version.js';
 import { jsonResponse, stubFetch } from './helpers/fetch.js';
 
@@ -28,7 +28,7 @@ describe('Transport request shape', () => {
     const { transport, stub } = make([jsonResponse({ ok: true })]);
     await transport.request('GET', '/banking/summary');
     const call = stub.calls[0]!;
-    expect(call.url).toBe('https://api.bankapi.vn/banking/summary');
+    expect(call.url).toBe('https://api.bankapi.vn/v1/banking/summary');
     expect(call.headers.get('x-api-key')).toBe('bk_test_key');
     expect(call.headers.get('accept')).toBe('application/json');
     expect(call.headers.get('user-agent')).toBe(`bankapi-node/${VERSION}`);
@@ -42,14 +42,14 @@ describe('Transport request shape', () => {
       q: 'thanh toan',
     });
     expect(stub.calls[0]!.url).toBe(
-      'https://api.bankapi.vn/banking/transactions?limit=50&q=thanh+toan',
+      'https://api.bankapi.vn/v1/banking/transactions?limit=50&q=thanh+toan',
     );
   });
 
   it('omits the query string entirely when nothing is set', async () => {
     const { transport, stub } = make([jsonResponse({ ok: true })]);
     await transport.request('GET', '/webhooks', { limit: undefined });
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/webhooks');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/webhooks');
   });
 
   it('sends a JSON body with a content-type on mutations', async () => {
@@ -66,7 +66,66 @@ describe('Transport request shape', () => {
       baseUrl: 'https://api.bankapi.vn/',
     });
     await transport.request('GET', '/webhooks');
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/webhooks');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/webhooks');
+  });
+});
+
+describe('API_VERSION_PATH', () => {
+  it('joins the base URL under /v1 for every path, with and without a query', async () => {
+    expect(API_VERSION_PATH).toBe('/v1');
+    const { transport, stub } = make([jsonResponse({ ok: true }), jsonResponse({ ok: true })]);
+    await transport.request('GET', '/banking/summary');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/banking/summary');
+    await transport.request('GET', '/banking/summary', { days: 7 });
+    expect(stub.calls[1]!.url).toBe('https://api.bankapi.vn/v1/banking/summary?days=7');
+  });
+});
+
+describe('Idempotency-Key', () => {
+  it('sends the key verbatim as the Idempotency-Key header', async () => {
+    const { transport, stub } = make([jsonResponse({ ok: true })]);
+    await transport.request(
+      'POST',
+      '/webhooks',
+      {},
+      { url: 'https://x.test' },
+      {
+        idempotencyKey: 'retry-key_1',
+      },
+    );
+    expect(stub.calls[0]!.headers.get('idempotency-key')).toBe('retry-key_1');
+  });
+
+  it('rejects a key with characters outside [A-Za-z0-9_-] before any fetch', async () => {
+    const { transport, stub } = make([jsonResponse({ ok: true })]);
+    await expect(
+      transport.request(
+        'POST',
+        '/webhooks',
+        {},
+        { url: 'https://x.test' },
+        {
+          idempotencyKey: 'bad key!',
+        },
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(stub.calls).toHaveLength(0);
+  });
+
+  it('rejects a key longer than 64 characters before any fetch', async () => {
+    const { transport, stub } = make([jsonResponse({ ok: true })]);
+    await expect(
+      transport.request(
+        'POST',
+        '/webhooks',
+        {},
+        { url: 'https://x.test' },
+        {
+          idempotencyKey: 'a'.repeat(65),
+        },
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(stub.calls).toHaveLength(0);
   });
 });
 

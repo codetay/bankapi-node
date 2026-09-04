@@ -1,4 +1,5 @@
 export { VERSION } from './version.js';
+export { API_VERSION_PATH } from './transport.js';
 export { BankApi } from './client.js';
 export type { BankApiOptions } from './client.js';
 export { Page } from './page.js';

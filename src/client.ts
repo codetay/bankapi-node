@@ -1,6 +1,6 @@
 import { BankingService } from './services/banking.js';
 import { WebhookEndpointService } from './services/webhook-endpoints.js';
-import { Transport } from './transport.js';
+import { API_VERSION_PATH, Transport } from './transport.js';
 import { VERSION } from './version.js';
 
 const DEFAULT_BASE_URL = 'https://api.bankapi.vn';
@@ -67,5 +67,12 @@ function requireSecureBaseUrl(baseUrl: string): string {
     );
   }
 
-  return baseUrl.trim().replace(/\/+$/, '');
+  const trimmed = baseUrl.trim().replace(/\/+$/, '');
+  if (trimmed.endsWith(API_VERSION_PATH)) {
+    throw new Error(
+      'baseUrl must be the API origin (e.g. https://acme.bankapi.vn); the SDK appends /v1',
+    );
+  }
+
+  return trimmed;
 }

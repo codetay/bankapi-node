@@ -18,7 +18,7 @@ describe('summary', () => {
   it('calls GET /banking/summary without a query by default', async () => {
     const { service, stub } = make([jsonResponse({ count: 2, credit_total: 500 })]);
     const summary = await service.summary();
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/banking/summary');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/banking/summary');
     expect(summary.count).toBe(2);
     expect(summary.creditTotal).toBe(500);
   });
@@ -26,7 +26,7 @@ describe('summary', () => {
   it('passes days when given', async () => {
     const { service, stub } = make([jsonResponse({})]);
     await service.summary({ days: 7 });
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/banking/summary?days=7');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/banking/summary?days=7');
   });
 });
 
@@ -36,7 +36,7 @@ describe('connections', () => {
       jsonResponse({ items: [{ id: 'conn_1', bank_code: 'ocb' }, { id: 'conn_2' }] }),
     ]);
     const connections = await service.connections();
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/banking/connections');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/banking/connections');
     expect(connections).toHaveLength(2);
     expect(connections[0]!.bankCode).toBe('ocb');
   });
@@ -51,14 +51,16 @@ describe('connectionsSummary and connection', () => {
   it('calls the summary endpoint with days', async () => {
     const { service, stub } = make([jsonResponse({ from: 'a', to: 'b', connections: [] })]);
     const summary = await service.connectionsSummary({ days: 30 });
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/banking/connections/summary?days=30');
+    expect(stub.calls[0]!.url).toBe(
+      'https://api.bankapi.vn/v1/banking/connections/summary?days=30',
+    );
     expect(summary.from).toBe('a');
   });
 
   it('url-encodes the connection id', async () => {
     const { service, stub } = make([jsonResponse({ id: 'conn/1' })]);
     await service.connection('conn/1');
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/banking/connections/conn%2F1');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/banking/connections/conn%2F1');
   });
 });
 
@@ -76,7 +78,7 @@ describe('transactions', () => {
       matchStatus: 'unmatched',
     });
     const url = new URL(stub.calls[0]!.url);
-    expect(url.pathname).toBe('/banking/transactions');
+    expect(url.pathname).toBe('/v1/banking/transactions');
     expect(Object.fromEntries(url.searchParams)).toEqual({
       limit: '50',
       cursor: 'cur_1',
@@ -127,7 +129,7 @@ describe('transaction and matchTransaction', () => {
   it('reads one transaction detail', async () => {
     const { service, stub } = make([jsonResponse({ id: 'tx_1', redelivery_count: 3 })]);
     const detail = await service.transaction('tx_1');
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/banking/transactions/tx_1');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/banking/transactions/tx_1');
     expect(detail.redeliveryCount).toBe(3);
   });
 
@@ -136,7 +138,7 @@ describe('transaction and matchTransaction', () => {
     const detail = await service.matchTransaction('tx_1', 'pi_9');
     const call = stub.calls[0]!;
     expect(call.method).toBe('POST');
-    expect(call.url).toBe('https://api.bankapi.vn/banking/transactions/tx_1/match');
+    expect(call.url).toBe('https://api.bankapi.vn/v1/banking/transactions/tx_1/match');
     expect(call.body).toBe('{"intent_id":"pi_9"}');
     expect(detail.matchStatus).toBe('matched');
   });
@@ -149,7 +151,7 @@ describe('paymentIntents', () => {
     ]);
     const page = await service.paymentIntents({ status: 'pending', limit: 20 });
     const url = new URL(stub.calls[0]!.url);
-    expect(url.pathname).toBe('/banking/payment-intents');
+    expect(url.pathname).toBe('/v1/banking/payment-intents');
     expect(Object.fromEntries(url.searchParams)).toEqual({ status: 'pending', limit: '20' });
     expect(page.items[0]!.expectedAmount).toBe(99000);
   });

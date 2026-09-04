@@ -1,9 +1,40 @@
-import { ConnectionError, MalformedResponseError, errorFromResponse } from './errors.js';
+import {
+  ConnectionError,
+  MalformedResponseError,
+  ValidationError,
+  errorFromResponse,
+} from './errors.js';
 import { VERSION } from './version.js';
 
 export type QueryValue = string | number | undefined;
 
+/** Every path the transport builds is joined under this API version prefix. */
+export const API_VERSION_PATH = '/v1';
+
 const MAX_RETRY_AFTER_MS = 60_000;
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** Extra per-request options layered on top of the query and body. */
+export interface RequestOptions {
+  /** Merged in after the default headers, so these can override them. */
+  headers?: Record<string, string>;
+  /** Sent as Idempotency-Key. Validated client-side before any fetch. */
+  idempotencyKey?: string;
+}
+
+/**
+ * The API would reject a malformed key with a 422, but checking the pattern
+ * client-side fails fast without a round trip.
+ */
+function validateIdempotencyKey(key: string): void {
+  if (!IDEMPOTENCY_KEY_PATTERN.test(key)) {
+    throw new ValidationError(
+      0,
+      'Invalid Idempotency-Key',
+      `Idempotency-Key must be 1-64 characters of letters, digits, "_" or "-" (got ${JSON.stringify(key)}).`,
+    );
+  }
+}
 
 /**
  * Server-hinted retry delay from a Retry-After header, capped at 60s.
@@ -55,9 +86,12 @@ export class Transport {
     path: string,
     query: Record<string, QueryValue> = {},
     body?: unknown,
+    options: RequestOptions = {},
   ): Promise<Record<string, unknown>> {
+    if (options.idempotencyKey !== undefined) validateIdempotencyKey(options.idempotencyKey);
+
     const url = this.buildUrl(path, query);
-    const init = this.buildInit(method, body);
+    const init = this.buildInit(method, body, options);
 
     for (let attempt = 0; ;) {
       let response: Response;
@@ -101,15 +135,17 @@ export class Transport {
       if (value !== undefined) params.set(key, String(value));
     }
     const qs = params.toString();
-    return `${this.baseUrl}${path}${qs === '' ? '' : `?${qs}`}`;
+    return `${this.baseUrl}${API_VERSION_PATH}${path}${qs === '' ? '' : `?${qs}`}`;
   }
 
-  private buildInit(method: string, body: unknown): RequestInit {
+  private buildInit(method: string, body: unknown, options: RequestOptions): RequestInit {
     const headers: Record<string, string> = {
       'X-API-Key': this.apiKey,
       Accept: 'application/json',
       'User-Agent': `bankapi-node/${VERSION}`,
+      ...options.headers,
     };
+    if (options.idempotencyKey !== undefined) headers['Idempotency-Key'] = options.idempotencyKey;
     if (body === undefined) {
       return { method, headers };
     }

@@ -1,23 +1,39 @@
+/** Extra context threaded through every BankApiError subclass constructor. */
+export interface BankApiErrorOptions {
+  cause?: unknown;
+  /** problem.type with the urn:bankapi:error: prefix stripped; undefined for any other prefix. */
+  code?: string;
+  /** From the Idempotent-Replayed response header. */
+  replayed?: boolean;
+}
+
 /** Base class for every error the SDK throws for an HTTP interaction. */
 export class BankApiError extends Error {
   readonly status: number;
   readonly title: string;
   readonly detail: string;
   readonly body: Record<string, unknown>;
+  readonly code?: string;
+  readonly replayed: boolean;
 
   constructor(
     status: number,
     title: string,
     detail: string,
     body: Record<string, unknown> = {},
-    options?: { cause?: unknown },
+    options?: BankApiErrorOptions,
   ) {
-    super(`[${status}] ${title}: ${detail}`, options);
+    super(
+      `[${status}] ${title}: ${detail}`,
+      options?.cause !== undefined ? { cause: options.cause } : undefined,
+    );
     this.name = new.target.name;
     this.status = status;
     this.title = title;
     this.detail = detail;
     this.body = body;
+    this.code = options?.code;
+    this.replayed = options?.replayed ?? false;
   }
 }
 
@@ -35,8 +51,9 @@ export class RateLimitError extends BankApiError {
     detail: string,
     body: Record<string, unknown> = {},
     retryAfter: number | null = null,
+    options?: BankApiErrorOptions,
   ) {
-    super(status, title, detail, body);
+    super(status, title, detail, body, options);
     this.retryAfter = retryAfter;
   }
 }
@@ -70,6 +87,19 @@ export class SignatureVerificationError extends Error {
   }
 }
 
+const ERROR_CODE_PREFIX = 'urn:bankapi:error:';
+
+/** Strips the registry prefix off problem.type; undefined for any other prefix or shape. */
+function errorCode(problem: Record<string, unknown>): string | undefined {
+  const type = typeof problem.type === 'string' ? problem.type : undefined;
+  return type?.startsWith(ERROR_CODE_PREFIX) ? type.slice(ERROR_CODE_PREFIX.length) : undefined;
+}
+
+/** The header value match is case-insensitive; the header name lookup already is. */
+function isReplayed(headers: Headers): boolean {
+  return headers.get('idempotent-replayed')?.trim().toLowerCase() === 'true';
+}
+
 /** Build the right error subclass from an RFC 7807 problem+json response. */
 export function errorFromResponse(
   status: number,
@@ -78,21 +108,22 @@ export function errorFromResponse(
 ): BankApiError {
   const title = typeof problem.title === 'string' ? problem.title : 'API error';
   const detail = typeof problem.detail === 'string' ? problem.detail : '';
+  const options: BankApiErrorOptions = { code: errorCode(problem), replayed: isReplayed(headers) };
 
   switch (status) {
     case 400:
     case 422:
-      return new ValidationError(status, title, detail, problem);
+      return new ValidationError(status, title, detail, problem, options);
     case 401:
-      return new AuthenticationError(status, title, detail, problem);
+      return new AuthenticationError(status, title, detail, problem, options);
     case 403:
-      return new PermissionError(status, title, detail, problem);
+      return new PermissionError(status, title, detail, problem, options);
     case 404:
-      return new NotFoundError(status, title, detail, problem);
+      return new NotFoundError(status, title, detail, problem, options);
     case 429:
-      return new RateLimitError(status, title, detail, problem, retryAfter(headers));
+      return new RateLimitError(status, title, detail, problem, retryAfter(headers), options);
     default:
-      return new BankApiError(status, title, detail, problem);
+      return new BankApiError(status, title, detail, problem, options);
   }
 }
 

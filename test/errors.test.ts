@@ -57,6 +57,61 @@ describe('errorFromResponse', () => {
   });
 });
 
+describe('error.code from problem.type', () => {
+  it('strips the urn:bankapi:error: prefix for a 409 in-progress conflict', () => {
+    const err = errorFromResponse(
+      409,
+      { ...problem, type: 'urn:bankapi:error:idempotency.in_progress' },
+      new Headers(),
+    );
+    expect(err.code).toBe('idempotency.in_progress');
+    expect(err.status).toBe(409);
+    expect(err).toBeInstanceOf(BankApiError);
+  });
+
+  it('maps a 422 idempotency.key_reused to ValidationError with the code', () => {
+    const err = errorFromResponse(
+      422,
+      { ...problem, type: 'urn:bankapi:error:idempotency.key_reused' },
+      new Headers(),
+    );
+    expect(err).toBeInstanceOf(ValidationError);
+    expect(err.code).toBe('idempotency.key_reused');
+  });
+
+  it('leaves code undefined when type has an unknown prefix', () => {
+    const err = errorFromResponse(
+      400,
+      { ...problem, type: 'https://example.com/errors/x' },
+      new Headers(),
+    );
+    expect(err.code).toBeUndefined();
+  });
+
+  it('leaves code undefined when type is absent', () => {
+    const err = errorFromResponse(400, problem, new Headers());
+    expect(err.code).toBeUndefined();
+  });
+});
+
+describe('error.replayed from the Idempotent-Replayed header', () => {
+  it('is true when the header says true, case-insensitively', () => {
+    expect(
+      errorFromResponse(409, problem, new Headers({ 'idempotent-replayed': 'true' })).replayed,
+    ).toBe(true);
+    expect(
+      errorFromResponse(409, problem, new Headers({ 'Idempotent-Replayed': 'True' })).replayed,
+    ).toBe(true);
+  });
+
+  it('is false when the header is absent or not "true"', () => {
+    expect(errorFromResponse(409, problem, new Headers()).replayed).toBe(false);
+    expect(
+      errorFromResponse(409, problem, new Headers({ 'idempotent-replayed': 'false' })).replayed,
+    ).toBe(false);
+  });
+});
+
 describe('error shapes', () => {
   it('names each subclass after itself so logs are readable', () => {
     expect(errorFromResponse(404, problem, new Headers()).name).toBe('NotFoundError');
