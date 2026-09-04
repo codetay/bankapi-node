@@ -171,6 +171,12 @@ Every API failure throws a subclass of `BankApiError` carrying `status`,
 | no response  | `ConnectionError` (`status` 0, original error on `cause`) |
 | 2xx non-JSON | `MalformedResponseError`                                  |
 
+`status: 0` is shared by two distinct cases: `ConnectionError` (no response
+was received) and a client-side `ValidationError` raised before any request
+was sent (e.g. an `idempotencyKey` that fails the
+`^[A-Za-z0-9_-]{1,64}$` pattern). Branch on `instanceof`, not on `status`, to
+tell them apart.
+
 `GET` requests are retried twice on `429`, `5xx` and network errors with
 exponential backoff and jitter. Mutations are never retried.
 

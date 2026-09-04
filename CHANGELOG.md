@@ -4,6 +4,46 @@ All notable changes to this package are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-09-04
+
+The SDK now targets the frozen GO-KIT API contract (pinned by
+`test/fixtures/openapi.lock.json`), which moved every endpoint under `/v1`.
+**Migrating from 0.x:** if you were passing a `baseUrl` that already ended in
+`/v1`, drop the suffix — the SDK appends it now and rejects a `baseUrl` that
+already has it. If you inspected `BankApiError` messages to branch on the
+failure kind, read the new `error.code` field instead.
+
+### Breaking
+
+- Every request is now sent under `/v1` (`Transport` appends the exported
+  `API_VERSION_PATH` after `baseUrl`). `baseUrl` must be the API origin only
+  (e.g. `https://acme.bankapi.vn`) — a `baseUrl` that already ends in `/v1`
+  now throws instead of doubling the path.
+
+### Added
+
+- `banking.createPaymentIntent(input, { idempotencyKey? })` and
+  `banking.paymentIntent(id)`.
+- `idempotencyKey` option on `createPaymentIntent` and
+  `webhookEndpoints.create` (its signature stays backward compatible — the
+  option is a new trailing argument): validated against
+  `^[A-Za-z0-9_-]{1,64}$` and sent as the `Idempotency-Key` header; both
+  methods generate one with `crypto.randomUUID()` when the caller omits it.
+- `BankApiError#code` — the registry error code from `problem.type` with the
+  `urn:bankapi:error:` prefix stripped (`undefined` for any other shape) —
+  and `BankApiError#replayed`, read from the `Idempotent-Replayed` response
+  header.
+- Generated `ERROR_CODES`, `ErrorCode`, and `isErrorCode()`, pinned to the
+  GO-KIT error-code registry via `npm run gen:error-codes`.
+- `npm run sync-spec` / `npm run verify-spec` pin and check the OpenAPI
+  fixture against a GO-KIT ref by lock (`test/fixtures/openapi.lock.json`);
+  CI now checks out that ref and runs `verify-spec` on every matrix leg.
+
+### Changed
+
+- The OpenAPI fixture and contract tests now track the frozen GO-KIT
+  `4ef6a7c` contract instead of the pre-freeze spec.
+
 ## [0.2.0] - 2026-08-28
 
 ### Added
