@@ -32,8 +32,8 @@ for await (const tx of await client.banking.transactions({ matchStatus: 'unmatch
 The base URL defaults to `https://api.bankapi.vn` and must be `https` — plain
 `http` is accepted only for loopback hosts during local development. For an
 org-specific host, pass `baseUrl: 'https://acme.bankapi.vn'` — the origin
-only; the SDK appends `/v1` itself, so a `baseUrl` that already ends in
-`/v1` throws instead of silently doubling it.
+only; the SDK appends `/v1` itself (exported as `API_VERSION_PATH`), so a
+`baseUrl` that already ends in `/v1` throws instead of silently doubling it.
 
 ## Payment intents
 
@@ -41,7 +41,9 @@ only; the SDK appends `/v1` itself, so a `baseUrl` that already ends in
 your own `idempotencyKey` to control retries explicitly, or omit it and the
 SDK generates one with `crypto.randomUUID()`. A retry with the same key and
 the same request body replays the first response instead of creating a
-second intent, and the SDK sets `error.replayed` to reflect it.
+second intent. `BankApiError#replayed` is true only when the replayed
+response was itself an error; a successful replay returns the same intent
+(same `id`), which is all a caller needs.
 
 ```ts
 const intent = await client.banking.createPaymentIntent({

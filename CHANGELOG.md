@@ -44,6 +44,14 @@ failure kind, read the new `error.code` field instead.
 - The OpenAPI fixture and contract tests now track the frozen GO-KIT
   `4ef6a7c` contract instead of the pre-freeze spec.
 
+### Known limitations
+
+- `BankApiError#replayed` is true only when the replayed response was itself
+  an error; a successful replay returns the same intent (same `id`), which is
+  all a caller needs — a replayed 2xx cannot be told apart from a fresh
+  create by any response field, and the 409 `idempotency.in_progress` / 422
+  `idempotency.key_reused` errors do not carry `Idempotent-Replayed` either.
+
 ## [0.2.0] - 2026-08-28
 
 ### Added
