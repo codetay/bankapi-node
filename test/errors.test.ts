@@ -9,6 +9,7 @@ import {
   RateLimitError,
   ValidationError,
   errorFromResponse,
+  isErrorCode,
 } from '../src/errors.js';
 
 const problem = { title: 'Bad Request', detail: 'limit must be positive' };
@@ -109,6 +110,24 @@ describe('error.replayed from the Idempotent-Replayed header', () => {
     expect(
       errorFromResponse(409, problem, new Headers({ 'idempotent-replayed': 'false' })).replayed,
     ).toBe(false);
+  });
+});
+
+describe('isErrorCode', () => {
+  it('is true for a code in the registry', () => {
+    expect(isErrorCode('idempotency.key_reused')).toBe(true);
+  });
+
+  it('is false for a code not in the registry', () => {
+    expect(isErrorCode('nope.nope')).toBe(false);
+  });
+
+  it('is false for undefined', () => {
+    expect(isErrorCode(undefined)).toBe(false);
+  });
+
+  it('is false for a non-string value', () => {
+    expect(isErrorCode(42 as unknown as string)).toBe(false);
   });
 });
 
