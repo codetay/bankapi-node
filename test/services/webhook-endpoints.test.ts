@@ -22,7 +22,7 @@ describe('create', () => {
     const created = await service.create('https://shop.test/hook', ['bank.credit'], 'shop');
     const call = stub.calls[0]!;
     expect(call.method).toBe('POST');
-    expect(call.url).toBe('https://api.bankapi.vn/webhooks');
+    expect(call.url).toBe('https://api.bankapi.vn/v1/webhooks');
     expect(JSON.parse(call.body!)).toEqual({
       url: 'https://shop.test/hook',
       event_types: ['bank.credit'],
@@ -39,6 +39,22 @@ describe('create', () => {
       event_types: ['bank.credit'],
       description: '',
     });
+  });
+
+  const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  it('sends an SDK-generated UUID as Idempotency-Key when no options are given', async () => {
+    const { service, stub } = make([jsonResponse({ id: 'wh_1' })]);
+    await service.create('https://shop.test/hook', ['bank.credit']);
+    expect(stub.calls[0]!.headers.get('idempotency-key')).toMatch(UUID_V4);
+  });
+
+  it('sends the caller-supplied Idempotency-Key when given', async () => {
+    const { service, stub } = make([jsonResponse({ id: 'wh_1' })]);
+    await service.create('https://shop.test/hook', ['bank.credit'], 'shop', {
+      idempotencyKey: 'wh-create-1',
+    });
+    expect(stub.calls[0]!.headers.get('idempotency-key')).toBe('wh-create-1');
   });
 });
 
@@ -62,7 +78,7 @@ describe('get, delete, enable', () => {
   it('reads one endpoint', async () => {
     const { service, stub } = make([jsonResponse({ id: 'wh_1', failure_count: 4 })]);
     const endpoint = await service.get('wh_1');
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/webhooks/wh_1');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/webhooks/wh_1');
     expect(endpoint.failureCount).toBe(4);
   });
 
@@ -70,20 +86,20 @@ describe('get, delete, enable', () => {
     const { service, stub } = make([new Response(null, { status: 204 })]);
     await expect(service.delete('wh_1')).resolves.toBeUndefined();
     expect(stub.calls[0]!.method).toBe('DELETE');
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/webhooks/wh_1');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/webhooks/wh_1');
   });
 
   it('enables an endpoint', async () => {
     const { service, stub } = make([new Response(null, { status: 204 })]);
     await service.enable('wh_1');
     expect(stub.calls[0]!.method).toBe('POST');
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/webhooks/wh_1/enable');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/webhooks/wh_1/enable');
   });
 
   it('url-encodes the endpoint id on every path', async () => {
     const { service, stub } = make([new Response(null, { status: 204 })]);
     await service.enable('wh/1');
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/webhooks/wh%2F1/enable');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/webhooks/wh%2F1/enable');
   });
 });
 
@@ -94,7 +110,7 @@ describe('deliveries', () => {
     ]);
     const page = await service.deliveries('wh_1', { limit: 10 });
     const url = new URL(stub.calls[0]!.url);
-    expect(url.pathname).toBe('/webhooks/wh_1/deliveries');
+    expect(url.pathname).toBe('/v1/webhooks/wh_1/deliveries');
     expect(Object.fromEntries(url.searchParams)).toEqual({ limit: '10' });
     expect(page.items[0]!.statusCode).toBe(500);
   });
@@ -107,6 +123,6 @@ describe('deliveries', () => {
     const seen: string[] = [];
     for await (const delivery of await service.deliveries('wh_1')) seen.push(delivery.id);
     expect(seen).toEqual(['dl_1', 'dl_2']);
-    expect(new URL(stub.calls[1]!.url).pathname).toBe('/webhooks/wh_1/deliveries');
+    expect(new URL(stub.calls[1]!.url).pathname).toBe('/v1/webhooks/wh_1/deliveries');
   });
 });

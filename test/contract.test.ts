@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { ERROR_CODES } from '../src/error-codes.js';
 
 /**
  * Drift guard: every path/method the SDK calls must exist in the pinned
@@ -15,6 +16,8 @@ const CALLS: Array<[string, string]> = [
   ['get', '/banking/transactions/{txId}'],
   ['post', '/banking/transactions/{txId}/match'],
   ['get', '/banking/payment-intents'],
+  ['post', '/banking/payment-intents'],
+  ['get', '/banking/payment-intents/{intentId}'],
   ['get', '/webhooks'],
   ['post', '/webhooks'],
   ['get', '/webhooks/{endpointId}'],
@@ -73,6 +76,7 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
     'matched_transaction_id',
     'expires_at',
   ],
+  IntentCreateInputBody: ['code', 'expected_amount', 'expires_in_secs'],
   EndpointBody: ['id', 'url', 'event_types', 'active', 'description', 'failure_count'],
   CreateEndpointOutputBody: ['id', 'url', 'secret'],
   DeliveryItem: ['id', 'event_type', 'attempt', 'status_code', 'error', 'created_at'],
@@ -93,9 +97,16 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
   BankCapabilities: ['supports_balance', 'supports_debit'],
 };
 
+interface OperationLike {
+  operationId?: string;
+  'x-idempotent'?: boolean;
+  parameters?: Array<{ in: string; name: string }>;
+}
+
 interface Spec {
-  paths: Record<string, Record<string, unknown>>;
+  paths: Record<string, Record<string, OperationLike>>;
   components: { schemas: Record<string, { properties?: Record<string, unknown> }> };
+  'x-error-code-registry': Array<{ code: string }>;
 }
 
 const spec = JSON.parse(
@@ -116,6 +127,33 @@ describe('openapi contract', () => {
       for (const field of fields) {
         expect(schema?.properties?.[field], `schema ${name} lost field ${field}`).toBeDefined();
       }
+    },
+  );
+});
+
+describe('generated error codes', () => {
+  it('ERROR_CODES matches the registry codes, sorted', () => {
+    const registryCodes = spec['x-error-code-registry'].map((entry) => entry.code).sort();
+    expect([...ERROR_CODES]).toEqual(registryCodes);
+  });
+});
+
+describe('idempotent operations', () => {
+  const idempotentOps = Object.values(spec.paths)
+    .flatMap((methods) => Object.values(methods))
+    .filter((op) => op['x-idempotent'] === true);
+
+  it('the registry still marks exactly 6 operations x-idempotent', () => {
+    expect(idempotentOps).toHaveLength(6);
+  });
+
+  it.each(idempotentOps.map((op) => [op.operationId, op] as const))(
+    'operation %s declares the Idempotency-Key header parameter',
+    (_operationId, op) => {
+      const hasHeader = (op.parameters ?? []).some(
+        (param) => param.in === 'header' && param.name === 'Idempotency-Key',
+      );
+      expect(hasHeader).toBe(true);
     },
   );
 });

@@ -10,7 +10,7 @@ describe('construction', () => {
     const stub = stubFetch([jsonResponse({})]);
     const client = new BankApi({ apiKey: 'bk_live_1', fetch: stub.fetch });
     await client.banking.summary();
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/banking/summary');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/banking/summary');
   });
 
   it('accepts the shorthand string form', () => {
@@ -62,7 +62,24 @@ describe('base URL safety', () => {
       fetch: stub.fetch,
     });
     await client.banking.summary();
-    expect(stub.calls[0]!.url).toBe('https://sandbox.bankapi.vn/banking/summary');
+    expect(stub.calls[0]!.url).toBe('https://sandbox.bankapi.vn/v1/banking/summary');
+  });
+});
+
+describe('baseUrl already under /v1', () => {
+  it('rejects a baseUrl that already ends with /v1', () => {
+    expect(() => new BankApi({ apiKey: 'k', baseUrl: 'https://acme.bankapi.vn/v1' })).toThrow(
+      TypeError,
+    );
+    expect(() => new BankApi({ apiKey: 'k', baseUrl: 'https://acme.bankapi.vn/v1' })).toThrow(
+      'baseUrl must be the API origin (e.g. https://acme.bankapi.vn); the SDK appends /v1',
+    );
+  });
+
+  it('rejects it even with a trailing slash', () => {
+    expect(() => new BankApi({ apiKey: 'k', baseUrl: 'https://acme.bankapi.vn/v1/' })).toThrow(
+      'baseUrl must be the API origin (e.g. https://acme.bankapi.vn); the SDK appends /v1',
+    );
   });
 });
 
