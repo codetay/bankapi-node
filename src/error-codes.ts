@@ -45,6 +45,7 @@ export const ERROR_CODES = [
   'idempotency.key_reused',
   'org.has_active_bank_consent',
   'org.has_bank_transactions',
+  'org.has_credit_ledger',
   'org.member_last_owner',
   'payment.gateway_unavailable',
   'payment.state_invalid',
