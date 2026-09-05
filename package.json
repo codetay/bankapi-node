@@ -64,7 +64,7 @@
     "sync-spec": "node scripts/sync-spec.mjs",
     "verify-spec": "node scripts/verify-spec.mjs",
     "gen:error-codes": "node scripts/gen-error-codes.mjs",
-    "sync-vectors": "cd ../GO-KIT && WEBHOOK_VECTORS_OUT=../SDK-NODE/test/fixtures/webhook_vectors.json go test ./internal/modules/connector/transport/httpwebhook/ -run TestWriteGoldenVectors -count=1",
+    "sync-vectors": "cd ../GO-KIT && WEBHOOK_VECTORS_OUT=\"$OLDPWD/test/fixtures/webhook_vectors.json\" go test ./internal/modules/connector/transport/httpwebhook/ -run TestWriteGoldenVectors -count=1",
     "check:package": "npm run build && publint && attw --pack . --profile node16",
     "prepublishOnly": "npm test && npm run build"
   },

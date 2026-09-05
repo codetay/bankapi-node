@@ -32,6 +32,6 @@ describe('openapi spec lock', () => {
   it('pins the frozen BankAPI contract', () => {
     expect(spec.info.title).toBe('BankAPI');
     expect(spec.servers[0]?.url.endsWith('/v1')).toBe(true);
-    expect(spec['x-error-code-registry']).toHaveLength(55);
+    expect(spec['x-error-code-registry']).toHaveLength(56);
   });
 });
