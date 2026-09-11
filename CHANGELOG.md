@@ -4,6 +4,14 @@ All notable changes to this package are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-09-11
+
+### Added
+
+- `org.has_credit_ledger` in `ERROR_CODES`, matching the GO-KIT contract at
+  `33fb9fa` (the error code the API returns when an organization with a
+  credit ledger cannot be removed).
+
 ## [1.0.0] - 2026-09-04
 
 The SDK now targets the frozen GO-KIT API contract (pinned by
