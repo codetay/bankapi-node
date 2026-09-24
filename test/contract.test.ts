@@ -143,8 +143,8 @@ describe('idempotent operations', () => {
     .flatMap((methods) => Object.values(methods))
     .filter((op) => op['x-idempotent'] === true);
 
-  it('the registry still marks exactly 6 operations x-idempotent', () => {
-    expect(idempotentOps).toHaveLength(6);
+  it('the registry still marks exactly 9 operations x-idempotent', () => {
+    expect(idempotentOps).toHaveLength(9);
   });
 
   it.each(idempotentOps.map((op) => [op.operationId, op] as const))(

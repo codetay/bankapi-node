@@ -3,8 +3,15 @@ export { API_VERSION_PATH } from './transport.js';
 export { BankApi } from './client.js';
 export type { BankApiOptions } from './client.js';
 export { Page } from './page.js';
-export { constructEvent } from './webhook.js';
-export type { ConstructEventOptions, HeaderBag, WebhookEvent } from './webhook.js';
+export { constructEvent, decodeSecret, verifySignature } from './webhook.js';
+export type {
+  ConstructEventOptions,
+  HeaderBag,
+  VerifiedDelivery,
+  WebhookEvent,
+} from './webhook.js';
+export { isWebhookEvent, WEBHOOK_EVENT_TYPES } from './webhook-events.js';
+export type * from './webhook-events.js';
 export { ERROR_CODES } from './error-codes.js';
 export type { ErrorCode } from './error-codes.js';
 export {

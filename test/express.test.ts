@@ -3,13 +3,21 @@ import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { bankapiWebhook, type WebhookRequest } from '../src/express.js';
 
-const SECRET = 'whsec_test';
+const SECRET = 'whsec_AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=';
 const TS = '1735689600';
-const ID = 'dlv_1';
-const BODY = JSON.stringify({ event: 'bank.credit', data: { amount: 150000 } });
+const ID = 'msg_1';
+const BODY = JSON.stringify({
+  id: '0b6f3c1e-0000-4000-8000-000000000001',
+  type: 'bank.credit',
+  api_version: 'v1',
+  created_at: '2025-01-01T00:00:00Z',
+  org_id: '01a0a592-0000-7000-8000-000000000001',
+  data: { amount: 150000 },
+});
 
 function sign(body: string, timestamp = TS): string {
-  return `sha256=${createHmac('sha256', SECRET).update(`${ID}.${timestamp}.${body}`).digest('hex')}`;
+  const key = Buffer.from(SECRET.slice('whsec_'.length), 'base64');
+  return `v1,${createHmac('sha256', key).update(`${ID}.${timestamp}.${body}`).digest('base64')}`;
 }
 
 function makeReq(
@@ -43,9 +51,9 @@ function makeRes() {
 
 function goodHeaders(body = BODY, timestamp = TS) {
   return {
-    'x-webhook-delivery-id': ID,
-    'x-webhook-timestamp': timestamp,
-    'x-webhook-signature': sign(body, timestamp),
+    'webhook-id': ID,
+    'webhook-timestamp': timestamp,
+    'webhook-signature': sign(body, timestamp),
   };
 }
 
@@ -78,10 +86,14 @@ describe('bankapiWebhook — accepted deliveries', () => {
     const next = await run(req, res, { secret: SECRET, now });
     expect(next).toHaveBeenCalledWith();
     expect(req.bankapiEvent).toEqual({
+      id: '0b6f3c1e-0000-4000-8000-000000000001',
       type: 'bank.credit',
-      deliveryId: ID,
-      timestamp: Number(TS),
+      api_version: 'v1',
+      created_at: '2025-01-01T00:00:00Z',
+      org_id: '01a0a592-0000-7000-8000-000000000001',
       data: { amount: 150000 },
+      webhookId: ID,
+      timestamp: Number(TS),
     });
   });
 
@@ -103,7 +115,7 @@ describe('bankapiWebhook — accepted deliveries', () => {
 
 describe('bankapiWebhook — rejected deliveries', () => {
   it('answers 400 and never calls next when the signature is wrong', async () => {
-    const req = makeReq(BODY, { ...goodHeaders(), 'x-webhook-signature': 'sha256=deadbeef' });
+    const req = makeReq(BODY, { ...goodHeaders(), 'webhook-signature': 'v1,deadbeef' });
     const res = makeRes();
     const next = await run(req, res, { secret: SECRET, now });
     expect(next).not.toHaveBeenCalled();
@@ -121,7 +133,7 @@ describe('bankapiWebhook — rejected deliveries', () => {
 
   it('answers 400 when a required header is missing', async () => {
     const headers = goodHeaders();
-    delete (headers as Record<string, string>)['x-webhook-timestamp'];
+    delete (headers as Record<string, string>)['webhook-timestamp'];
     const req = makeReq(BODY, headers);
     const res = makeRes();
     const next = await run(req, res, { secret: SECRET, now });
@@ -130,7 +142,7 @@ describe('bankapiWebhook — rejected deliveries', () => {
   });
 
   it('does not leak why verification failed', async () => {
-    const req = makeReq(BODY, { ...goodHeaders(), 'x-webhook-signature': 'sha256=deadbeef' });
+    const req = makeReq(BODY, { ...goodHeaders(), 'webhook-signature': 'v1,deadbeef' });
     const res = makeRes();
     await run(req, res, { secret: SECRET, now });
     expect(res.ended).not.toContain('mismatch');

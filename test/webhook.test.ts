@@ -1,237 +1,166 @@
 import { readFileSync } from 'node:fs';
-import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { SignatureVerificationError } from '../src/errors.js';
-import { constructEvent } from '../src/webhook.js';
+import { constructEvent, decodeSecret, verifySignature } from '../src/webhook.js';
+import { isWebhookEvent, WEBHOOK_EVENT_TYPES } from '../src/webhook-events.js';
 
 interface Vector {
+  name: string;
   secret: string;
-  delivery_id: string;
+  previous_secret?: string;
+  msg_id: string;
   timestamp: string;
   body: string;
   signature_header: string;
 }
 
-const vectors = JSON.parse(
+const file = JSON.parse(
   readFileSync(new URL('./fixtures/webhook_vectors.json', import.meta.url), 'utf8'),
-) as Vector[];
+) as { tolerance_seconds: number; standard_webhooks_reference: Vector; vectors: Vector[] };
 
-const SECRET = 'whsec_test';
-
-function sign(deliveryId: string, timestamp: string, body: string, secret = SECRET): string {
-  return `sha256=${createHmac('sha256', secret).update(`${deliveryId}.${timestamp}.${body}`).digest('hex')}`;
+function byName(name: string): Vector {
+  const v = file.vectors.find((x) => x.name === name);
+  if (!v) throw new Error(`vector ${name} missing from the GO-KIT fixture`);
+  return v;
 }
 
-function headersFor(deliveryId: string, timestamp: string, signature: string) {
-  return {
-    'X-Webhook-Delivery-Id': deliveryId,
-    'X-Webhook-Timestamp': timestamp,
-    'X-Webhook-Signature': signature,
-    'X-Webhook-Event': 'attacker.controlled',
-  };
-}
+const headersFor = (v: Vector): Record<string, string> => ({
+  'webhook-id': v.msg_id,
+  'webhook-timestamp': v.timestamp,
+  'webhook-signature': v.signature_header,
+});
+const at = (v: Vector) => ({ now: Number(v.timestamp) });
 
-describe('constructEvent — golden vectors from the server', () => {
-  it('verifies every vector produced by the Go signer', () => {
-    expect(vectors.length).toBeGreaterThan(2);
-    for (const v of vectors) {
-      const event = constructEvent(
-        v.body,
-        headersFor(v.delivery_id, v.timestamp, v.signature_header),
-        v.secret,
-        { now: Number(v.timestamp) },
-      );
-      expect(event.deliveryId).toBe(v.delivery_id);
-      expect(event.timestamp).toBe(Number(v.timestamp));
-      expect(event.type).toBe((JSON.parse(v.body) as { event: string }).event);
+describe('golden vectors from GO-KIT', () => {
+  it('verifies every vector, and a rotating one with either secret', () => {
+    expect(file.vectors.length).toBeGreaterThanOrEqual(7);
+    for (const v of file.vectors) {
+      const event = constructEvent(v.body, headersFor(v), v.secret, at(v));
+      expect(event.webhookId).toBe(v.msg_id);
+      expect(event.api_version).toBe('v1');
+      if (v.previous_secret) {
+        expect(constructEvent(v.body, headersFor(v), v.previous_secret, at(v)).id).toBe(event.id);
+      }
     }
   });
 
-  it('verifies a vector passed as a Buffer, byte for byte', () => {
-    const v = vectors[0]!;
-    const event = constructEvent(
-      Buffer.from(v.body, 'utf8'),
-      headersFor(v.delivery_id, v.timestamp, v.signature_header),
-      v.secret,
-      { now: Number(v.timestamp) },
-    );
-    expect(event.deliveryId).toBe(v.delivery_id);
-  });
-});
-
-describe('constructEvent — happy path', () => {
-  const body = JSON.stringify({ event: 'bank.credit', data: { amount: 150000 } });
-  const ts = '1735689600';
-  const id = 'dlv_1';
-
-  it('returns the verified event', () => {
-    const event = constructEvent(body, headersFor(id, ts, sign(id, ts, body)), SECRET, {
-      now: Number(ts),
-    });
-    expect(event).toEqual({
-      type: 'bank.credit',
-      deliveryId: id,
-      timestamp: 1735689600,
-      data: { amount: 150000 },
-    });
-  });
-
-  it('ignores X-Webhook-Event and takes the type from the signed body', () => {
-    const event = constructEvent(body, headersFor(id, ts, sign(id, ts, body)), SECRET, {
-      now: Number(ts),
-    });
-    expect(event.type).toBe('bank.credit');
-  });
-
-  it('looks headers up case-insensitively', () => {
-    const event = constructEvent(
-      body,
-      {
-        'x-webhook-delivery-id': id,
-        'x-webhook-timestamp': ts,
-        'x-webhook-signature': sign(id, ts, body),
-      },
-      SECRET,
-      { now: Number(ts) },
-    );
-    expect(event.type).toBe('bank.credit');
-  });
-
-  it('accepts a fetch Headers instance', () => {
-    const headers = new Headers({
-      'X-Webhook-Delivery-Id': id,
-      'X-Webhook-Timestamp': ts,
-      'X-Webhook-Signature': sign(id, ts, body),
-    });
-    expect(constructEvent(body, headers, SECRET, { now: Number(ts) }).type).toBe('bank.credit');
-  });
-
-  it('takes the first value of a repeated node header', () => {
-    const event = constructEvent(
-      body,
-      {
-        'x-webhook-delivery-id': [id, 'dlv_other'],
-        'x-webhook-timestamp': ts,
-        'x-webhook-signature': sign(id, ts, body),
-      },
-      SECRET,
-      { now: Number(ts) },
-    );
-    expect(event.deliveryId).toBe(id);
-  });
-
-  it('defaults data to an empty object when the body has none', () => {
-    const noData = JSON.stringify({ event: 'org.created' });
-    const event = constructEvent(noData, headersFor(id, ts, sign(id, ts, noData)), SECRET, {
-      now: Number(ts),
-    });
-    expect(event.data).toEqual({});
-  });
-});
-
-describe('constructEvent — rejections', () => {
-  const body = JSON.stringify({ event: 'bank.credit', data: {} });
-  const ts = '1735689600';
-  const id = 'dlv_1';
-  const good = sign(id, ts, body);
-
-  it('rejects an empty secret', () => {
-    expect(() => constructEvent(body, headersFor(id, ts, good), '')).toThrow(
-      SignatureVerificationError,
-    );
-  });
-
-  it.each(['x-webhook-delivery-id', 'x-webhook-timestamp', 'x-webhook-signature'])(
-    'rejects a missing %s header',
-    (missing) => {
-      const headers: Record<string, string> = {
-        'x-webhook-delivery-id': id,
-        'x-webhook-timestamp': ts,
-        'x-webhook-signature': good,
-      };
-      delete headers[missing];
-      expect(() => constructEvent(body, headers, SECRET, { now: Number(ts) })).toThrow(
-        SignatureVerificationError,
-      );
-    },
-  );
-
-  it('rejects a signature without the sha256= prefix', () => {
-    expect(() =>
-      constructEvent(body, headersFor(id, ts, good.slice(7)), SECRET, { now: Number(ts) }),
-    ).toThrow(SignatureVerificationError);
-  });
-
-  it('rejects a tampered body', () => {
-    const tampered = JSON.stringify({ event: 'bank.credit', data: { amount: 999 } });
-    expect(() =>
-      constructEvent(tampered, headersFor(id, ts, good), SECRET, { now: Number(ts) }),
-    ).toThrow(SignatureVerificationError);
-  });
-
-  it('rejects a signature made with a different secret', () => {
-    expect(() =>
-      constructEvent(body, headersFor(id, ts, sign(id, ts, body, 'whsec_other')), SECRET, {
-        now: Number(ts),
-      }),
-    ).toThrow(SignatureVerificationError);
-  });
-
-  it('rejects a signature of the wrong length without throwing RangeError', () => {
-    expect(() =>
-      constructEvent(body, headersFor(id, ts, 'sha256=abc'), SECRET, { now: Number(ts) }),
-    ).toThrow(SignatureVerificationError);
-  });
-
-  it('rejects a timestamp outside the tolerance, in both directions', () => {
-    const headers = headersFor(id, ts, good);
-    expect(() => constructEvent(body, headers, SECRET, { now: Number(ts) + 301 })).toThrow(
-      SignatureVerificationError,
-    );
-    expect(() => constructEvent(body, headers, SECRET, { now: Number(ts) - 301 })).toThrow(
-      SignatureVerificationError,
-    );
-  });
-
-  it('accepts a timestamp exactly at the tolerance edge', () => {
-    const headers = headersFor(id, ts, good);
-    expect(constructEvent(body, headers, SECRET, { now: Number(ts) + 300 }).type).toBe(
+  it('verifies a Buffer byte for byte', () => {
+    const v = byName('bank.credit');
+    expect(constructEvent(Buffer.from(v.body, 'utf8'), headersFor(v), v.secret, at(v)).type).toBe(
       'bank.credit',
     );
   });
 
-  it('honours a custom tolerance', () => {
-    const headers = headersFor(id, ts, good);
-    expect(() =>
-      constructEvent(body, headers, SECRET, { now: Number(ts) + 60, tolerance: 30 }),
-    ).toThrow(SignatureVerificationError);
+  it('matches the Standard Webhooks reference signature', () => {
+    const v = file.standard_webhooks_reference;
+    expect(verifySignature(v.body, headersFor(v), v.secret, at(v)).webhookId).toBe(v.msg_id);
   });
 
-  it('rejects a correctly signed body that carries no event type', () => {
-    const noEvent = JSON.stringify({ data: { amount: 1 } });
-    expect(() =>
-      constructEvent(noEvent, headersFor(id, ts, sign(id, ts, noEvent)), SECRET, {
-        now: Number(ts),
-      }),
-    ).toThrow(SignatureVerificationError);
+  it('TestLegacySecretVerifies: a base64url secret decodes to the same key', () => {
+    const v = byName('bank.credit.legacy_urlsafe_secret');
+    expect(v.secret).toMatch(/[-_]/);
+    expect(decodeSecret(v.secret)).toHaveLength(32);
+    expect(constructEvent(v.body, headersFor(v), v.secret, at(v)).type).toBe('bank.credit');
   });
 
-  it('rejects a correctly signed body that is not JSON', () => {
-    const notJson = 'not json at all';
-    expect(() =>
-      constructEvent(notJson, headersFor(id, ts, sign(id, ts, notJson)), SECRET, {
-        now: Number(ts),
-      }),
-    ).toThrow(SignatureVerificationError);
+  it('TestFlowOutputNarrowsToItsOwnType', () => {
+    const v = byName('flow.output');
+    const event = constructEvent(v.body, headersFor(v), v.secret, at(v));
+    expect(isWebhookEvent(event, 'bank.credit')).toBe(false);
+    if (!isWebhookEvent(event, 'flow.output')) throw new Error('flow.output did not narrow');
+    expect(event.trigger.type).toBe('bank.credit');
+    expect(event.data).toEqual({ order: 'DH1245', paid: true });
   });
 
-  it('checks the signature before the timestamp', () => {
-    // A stale delivery with a bad signature must fail on the signature, so a
-    // caller cannot distinguish "bad secret" from "expired" by the message.
+  it('TestUnknownTypeParsesAsUnknownEnvelope', () => {
+    const v = byName('unknown.future_event');
+    const event = constructEvent(v.body, headersFor(v), v.secret, at(v));
+    expect(event.type).toBe('bank.future_event');
+    expect((WEBHOOK_EVENT_TYPES as readonly string[]).includes(event.type)).toBe(false);
+    expect(event.data).toEqual({ note: 'receivers must accept unknown types: A & B <tag> > end' });
+  });
+
+  it('keeps the exact digits above 2^53 in the signed body (JSON.parse rounds them: documented)', () => {
+    const v = byName('bank.credit.amount_above_2_pow_53');
+    expect(v.body).toContain('"amount":9007199254740993');
+    const event = constructEvent(v.body, headersFor(v), v.secret, at(v));
+    if (!isWebhookEvent(event, 'bank.credit')) throw new Error('not bank.credit');
+    expect(Number.isSafeInteger(event.data.amount)).toBe(false);
+  });
+
+  it('types a calendar-date quota period as data, not an instant', () => {
+    const v = byName('org.quota_exceeded');
+    const event = constructEvent(v.body, headersFor(v), v.secret, at(v));
+    if (!isWebhookEvent(event, 'org.quota_exceeded')) throw new Error('not org.quota_exceeded');
+    expect(event.data.period_end_exclusive).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe('verification failures', () => {
+  const v = byName('bank.credit');
+
+  it('TestToleranceIsSymmetric', () => {
+    const ts = Number(v.timestamp);
+    for (const now of [ts - 300, ts + 300]) {
+      expect(() => constructEvent(v.body, headersFor(v), v.secret, { now })).not.toThrow();
+    }
+    for (const now of [ts - 301, ts + 301]) {
+      expect(() => constructEvent(v.body, headersFor(v), v.secret, { now })).toThrow(
+        SignatureVerificationError,
+      );
+    }
+  });
+
+  it('binds the body, the id and the timestamp', () => {
+    expect(() => constructEvent(`${v.body} `, headersFor(v), v.secret, at(v))).toThrow(
+      'webhook signature mismatch',
+    );
     expect(() =>
-      constructEvent(body, headersFor(id, ts, sign(id, ts, 'other')), SECRET, {
-        now: Number(ts) + 10_000,
-      }),
-    ).toThrow(/signature mismatch/);
+      constructEvent(v.body, { ...headersFor(v), 'webhook-id': 'other' }, v.secret, at(v)),
+    ).toThrow('webhook signature mismatch');
+    expect(() =>
+      constructEvent(
+        v.body,
+        { ...headersFor(v), 'webhook-timestamp': String(Number(v.timestamp) + 1) },
+        v.secret,
+        {
+          now: Number(v.timestamp),
+        },
+      ),
+    ).toThrow('webhook signature mismatch');
+  });
+
+  it('ignores signature entries that are not v1', () => {
+    const header = {
+      ...headersFor(v),
+      'webhook-signature': v.signature_header.replace(/^v1,/, 'v2,'),
+    };
+    expect(() => constructEvent(v.body, header, v.secret, at(v))).toThrow(
+      'webhook signature mismatch',
+    );
+  });
+
+  it('rejects missing headers, an empty secret and a body that is not an envelope', () => {
+    const { ['webhook-id']: _omit, ...noId } = headersFor(v);
+    expect(() => constructEvent(v.body, noId, v.secret, at(v))).toThrow(
+      'missing webhook-id header',
+    );
+    expect(() => constructEvent(v.body, headersFor(v), '', at(v))).toThrow(
+      SignatureVerificationError,
+    );
+    const ref = file.standard_webhooks_reference;
+    expect(() => constructEvent(ref.body, headersFor(ref), ref.secret, at(ref))).toThrow(
+      'signed payload is not a webhook envelope',
+    );
+  });
+
+  it('reads headers case-insensitively and from a Headers object', () => {
+    const upper = Object.fromEntries(
+      Object.entries(headersFor(v)).map(([k, val]) => [k.toUpperCase(), val]),
+    );
+    expect(constructEvent(v.body, upper, v.secret, at(v)).webhookId).toBe(v.msg_id);
+    expect(constructEvent(v.body, new Headers(headersFor(v)), v.secret, at(v)).webhookId).toBe(
+      v.msg_id,
+    );
   });
 });

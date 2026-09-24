@@ -1,31 +1,89 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { SignatureVerificationError } from './errors.js';
+import type { WebhookEnvelope } from './webhook-events.js';
 
-const SIGNATURE_PREFIX = 'sha256=';
 const DEFAULT_TOLERANCE = 300;
+const SECRET_PREFIX = 'whsec_';
 
-/** A verified webhook event. deliveryId is the receiver-side idempotency key. */
-export interface WebhookEvent {
-  type: string;
-  deliveryId: string;
+/** The delivery a verified request came from. webhookId is the dedupe key. */
+export interface VerifiedDelivery {
+  webhookId: string;
   timestamp: number;
-  data: Record<string, unknown>;
 }
+
+/** A verified BankAPI webhook: the v1 envelope plus its delivery headers. */
+export type WebhookEvent = WebhookEnvelope & VerifiedDelivery;
 
 export type HeaderBag = Headers | Record<string, string | string[] | undefined>;
 
 export interface ConstructEventOptions {
-  /** Max |now - timestamp| in seconds (replay guard). Default 300. */
+  /** Max |now - webhook-timestamp| in seconds, both directions. Default 300. */
   tolerance?: number;
   /** Overrides the current Unix time in seconds; for tests. */
   now?: number;
 }
 
 /**
- * Verifies a BankAPI webhook: HMAC-SHA256 hex over
- * "<delivery_id>.<timestamp>.<raw body>", carried as "sha256=<hex>" in
- * X-Webhook-Signature. The signature is checked before the timestamp
- * tolerance, and the event type is read from the signed body only.
+ * The HMAC key of a whsec_ secret. Node's base64 decoder accepts the standard
+ * and the URL-safe alphabet, padded or not, so secrets minted before envelope
+ * v1 (base64url) decode to the same key.
+ */
+export function decodeSecret(secret: string): Buffer {
+  const encoded = secret.startsWith(SECRET_PREFIX) ? secret.slice(SECRET_PREFIX.length) : secret;
+  const key = Buffer.from(encoded, 'base64');
+  if (encoded === '' || key.length === 0) {
+    throw new SignatureVerificationError('webhook secret must be whsec_<base64>');
+  }
+  return key;
+}
+
+/**
+ * Standard Webhooks verification: any v1 entry of webhook-signature must equal
+ * base64(HMAC-SHA256(key, "{webhook-id}.{webhook-timestamp}.{raw body}")), and
+ * the timestamp must be within the tolerance. The signature is checked first.
+ */
+export function verifySignature(
+  payload: string | Buffer,
+  headers: HeaderBag,
+  secret: string,
+  options: ConstructEventOptions = {},
+): VerifiedDelivery {
+  const key = decodeSecret(secret);
+  const lookup = normalizeHeaders(headers);
+  const webhookId = required(lookup, 'webhook-id');
+  const timestampRaw = required(lookup, 'webhook-timestamp');
+  const signatureHeader = required(lookup, 'webhook-signature');
+
+  const body = typeof payload === 'string' ? Buffer.from(payload, 'utf8') : payload;
+  const expected = createHmac('sha256', key)
+    .update(`${webhookId}.${timestampRaw}.`, 'utf8')
+    .update(body)
+    .digest();
+  const matched = signatureHeader.split(' ').some((entry) => {
+    const comma = entry.indexOf(',');
+    if (comma < 0 || entry.slice(0, comma) !== 'v1') return false;
+    const given = Buffer.from(entry.slice(comma + 1), 'base64');
+    return given.length === expected.length && timingSafeEqual(given, expected);
+  });
+  if (!matched) {
+    throw new SignatureVerificationError('webhook signature mismatch');
+  }
+
+  if (!/^\d+$/.test(timestampRaw)) {
+    throw new SignatureVerificationError('webhook-timestamp is not Unix seconds');
+  }
+  const timestamp = Number(timestampRaw);
+  const now = options.now ?? Math.floor(Date.now() / 1000);
+  const tolerance = options.tolerance ?? DEFAULT_TOLERANCE;
+  if (Math.abs(now - timestamp) > tolerance) {
+    throw new SignatureVerificationError('webhook timestamp outside tolerance');
+  }
+  return { webhookId, timestamp };
+}
+
+/**
+ * Verifies a BankAPI webhook and parses its v1 envelope. An event type this
+ * SDK does not know is returned as an UnknownWebhookEnvelope, never an error.
  */
 export function constructEvent(
   payload: string | Buffer,
@@ -33,49 +91,33 @@ export function constructEvent(
   secret: string,
   options: ConstructEventOptions = {},
 ): WebhookEvent {
-  if (secret === '') {
-    throw new SignatureVerificationError('webhook secret must not be empty');
+  const delivery = verifySignature(payload, headers, secret, options);
+  const raw = typeof payload === 'string' ? payload : payload.toString('utf8');
+  return { ...parseEnvelope(raw), ...delivery };
+}
+
+function parseEnvelope(raw: string): WebhookEnvelope {
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(raw);
+  } catch {
+    throw new SignatureVerificationError('signed payload is not JSON');
   }
-
-  const lookup = normalizeHeaders(headers);
-  const deliveryId = required(lookup, 'x-webhook-delivery-id');
-  const timestampRaw = required(lookup, 'x-webhook-timestamp');
-  const signatureHeader = required(lookup, 'x-webhook-signature');
-
-  if (!signatureHeader.startsWith(SIGNATURE_PREFIX)) {
-    throw new SignatureVerificationError('X-Webhook-Signature is not in "sha256=<hex>" form');
+  const e = asRecord(decoded);
+  if (
+    typeof e.id !== 'string' ||
+    typeof e.type !== 'string' ||
+    e.type === '' ||
+    typeof e.api_version !== 'string' ||
+    typeof e.created_at !== 'string' ||
+    typeof e.org_id !== 'string' ||
+    typeof e.data !== 'object' ||
+    e.data === null ||
+    Array.isArray(e.data)
+  ) {
+    throw new SignatureVerificationError('signed payload is not a webhook envelope');
   }
-
-  const body = typeof payload === 'string' ? Buffer.from(payload, 'utf8') : payload;
-  const hmac = createHmac('sha256', secret);
-  hmac.update(`${deliveryId}.${timestampRaw}.`, 'utf8');
-  hmac.update(body);
-  const expected = Buffer.from(hmac.digest('hex'), 'utf8');
-  const provided = Buffer.from(signatureHeader.slice(SIGNATURE_PREFIX.length), 'utf8');
-
-  // Length is compared first: timingSafeEqual throws on a length mismatch,
-  // and the digest length is fixed and public anyway.
-  if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
-    throw new SignatureVerificationError('webhook signature mismatch');
-  }
-
-  const timestamp = Number.parseInt(timestampRaw, 10);
-  const now = options.now ?? Math.floor(Date.now() / 1000);
-  const tolerance = options.tolerance ?? DEFAULT_TOLERANCE;
-  if (!Number.isFinite(timestamp) || Math.abs(now - timestamp) > tolerance) {
-    throw new SignatureVerificationError('webhook timestamp outside tolerance');
-  }
-
-  const decoded = parseJsonObject(body.toString('utf8'));
-  // The event type comes from the SIGNED body only. X-Webhook-Event is outside
-  // the signed string, so honouring it would let a replayed delivery be
-  // re-labelled and routed down the wrong branch.
-  const type = decoded.event;
-  if (typeof type !== 'string' || type === '') {
-    throw new SignatureVerificationError('signed payload has no event type');
-  }
-
-  return { type, deliveryId, timestamp, data: asRecord(decoded.data) };
+  return e as unknown as WebhookEnvelope;
 }
 
 function normalizeHeaders(headers: HeaderBag): Map<string, string> {
@@ -97,14 +139,6 @@ function required(headers: Map<string, string>, name: string): string {
     throw new SignatureVerificationError(`missing ${name} header`);
   }
   return value;
-}
-
-function parseJsonObject(raw: string): Record<string, unknown> {
-  try {
-    return asRecord(JSON.parse(raw));
-  } catch {
-    return {};
-  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

@@ -9,12 +9,17 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderErrorCodes } from './lib/error-codes.mjs';
+import { renderWebhookEvents } from './lib/webhook-events.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURE_PATH = resolve(ROOT, 'test/fixtures/openapi.json');
 const LOCK_PATH = resolve(ROOT, 'test/fixtures/openapi.lock.json');
 const ERROR_CODES_PATH = resolve(ROOT, 'src/error-codes.ts');
+const VECTORS_PATH = resolve(ROOT, 'test/fixtures/webhook_vectors.json');
+const WEBHOOK_EVENTS_PATH = resolve(ROOT, 'src/webhook-events.ts');
 const SPEC_PATH_IN_GOKIT = 'api/openapi.json';
+const VECTORS_PATH_IN_GOKIT =
+  'internal/modules/connector/transport/httpwebhook/testdata/webhook_vectors.json';
 // The spec is well under 1 MB today, but a generous cap costs nothing and
 // avoids a cryptic ENOBUFS if it grows.
 const MAX_BUFFER = 64 * 1024 * 1024;
@@ -75,8 +80,17 @@ function main() {
 
   writeFileSync(ERROR_CODES_PATH, renderErrorCodes(JSON.parse(spec)));
 
+  const vectors = execFileSync('git', ['show', `${sha}:${VECTORS_PATH_IN_GOKIT}`], {
+    cwd: gokitDir,
+    encoding: 'utf8',
+    maxBuffer: MAX_BUFFER,
+  });
+  writeFileSync(VECTORS_PATH, vectors);
+  writeFileSync(WEBHOOK_EVENTS_PATH, renderWebhookEvents(JSON.parse(spec)));
+
   console.log(`Synced test/fixtures/openapi.json from GO-KIT@${sha}`);
   console.log('Regenerated src/error-codes.ts');
+  console.log('Synced test/fixtures/webhook_vectors.json and regenerated src/webhook-events.ts');
 }
 
 main();

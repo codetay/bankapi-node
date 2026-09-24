@@ -2,3 +2,5 @@ dist
 test/fixtures
 graphify-out
 gokit
+src/webhook-events.ts
+.superpowers

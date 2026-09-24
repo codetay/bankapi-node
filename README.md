@@ -84,20 +84,42 @@ try {
 
 ## Webhooks
 
+BankAPI signs webhooks on [Standard Webhooks](https://www.standardwebhooks.com/).
 Verify every delivery before you trust it. The raw request body is required:
 verification runs over the exact bytes the server signed, so a body that has
 already been through `JSON.parse` cannot be verified.
 
 ```ts
-import { constructEvent } from '@codetay/bankapi-node';
+import { constructEvent, isWebhookEvent } from '@codetay/bankapi-node';
 
 const event = constructEvent(rawBody, request.headers, process.env.BANKAPI_WEBHOOK_SECRET!);
-// event.type, event.deliveryId, event.timestamp, event.data
+// event.webhookId, event.type, event.api_version, event.created_at, event.org_id, event.data
+
+if (isWebhookEvent(event, 'bank.credit')) {
+  event.data.amount; // typed: this branch narrows to BankCreditEvent
+}
 ```
 
 `constructEvent` throws `SignatureVerificationError` on a bad signature, a
-missing header, or a timestamp more than 300 seconds from now (configurable
-via `{ tolerance }`).
+missing `webhook-id`/`webhook-timestamp`/`webhook-signature` header, or a
+timestamp more than 300 seconds from now in either direction (configurable
+via `{ tolerance }`). A signing secret can be rotated: `webhook-signature`
+may carry more than one `v1,<base64>` entry, and verification succeeds if
+any one matches.
+
+An event type this SDK version does not know yet (the server added one after
+this SDK was generated) parses as an `UnknownWebhookEnvelope` instead of
+throwing — check `isWebhookEvent` before narrowing, and fall back to
+`event.data` typed as `Record<string, unknown>` for anything else.
+
+`event.data` comes from `JSON.parse`, so an integer above `Number.MAX_SAFE_INTEGER`
+(2^53-1) loses precision the same way any other `JSON.parse` call would. The
+server guarantees exactness only up to that bound end to end, so this is a
+documented limit, not a bug: BankAPI amounts realistically never approach it.
+
+Endpoint secrets are `whsec_<base64>`. A secret minted before this SDK
+version may be URL-safe base64, padded or not — `decodeSecret` accepts both
+alphabets, so an old secret keeps verifying unchanged.
 
 ### Express
 
@@ -153,9 +175,10 @@ app.post('/webhooks/bankapi', async (c) => {
 ### Delivery rules
 
 - Answer `2xx` quickly. The server retries on `408`, `429` and `5xx`.
-- **Deduplicate on `event.deliveryId`** — a retried delivery repeats it.
-- `event.type` always comes from the signed body. The `X-Webhook-Event` header
-  is not signed and is ignored.
+- **Deduplicate on `event.webhookId`** (the `webhook-id` header) — a retried
+  delivery repeats it, while `event.id` is the underlying event and stays
+  the same across a rotated secret.
+- `event.type` always comes from the signed body.
 
 ## Errors
 
@@ -216,8 +239,7 @@ npm test              # vitest
 npm run typecheck     # tsc --noEmit
 npm run build         # tsup, ESM + CJS + types
 npm run check:package # build + publint + attw
-npm run sync-spec     # refresh the pinned OpenAPI contract fixture
-npm run sync-vectors  # regenerate webhook golden vectors from the server
+npm run sync-spec     # refresh the pinned OpenAPI contract fixture, webhook vectors and event types
 ```
 
 Webhook golden vectors are produced by the BankAPI server's own signing code,
