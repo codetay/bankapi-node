@@ -4,7 +4,7 @@ All notable changes to this package are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0] - 2026-09-24
+## [2.0.0] - 2026-09-28
 
 The server now signs webhooks on
 [Standard Webhooks](https://www.standardwebhooks.com/) instead of the old
@@ -34,6 +34,12 @@ The server now signs webhooks on
   minted before this version keeps verifying).
 - `npm run sync-vectors` is gone; the webhook golden vectors are now synced
   by `npm run sync-spec` alongside the OpenAPI fixture.
+
+### Added
+
+- `WebhookTestEvent` (`webhook.test`), sent by the dashboard's "send test"
+  action. Acknowledge it like any other event.
+- `ERROR_CODES` now covers every coded 4xx the API returns (182 codes).
 
 ## [1.0.1] - 2026-09-11
 

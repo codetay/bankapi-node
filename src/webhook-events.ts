@@ -154,6 +154,13 @@ export interface SubscriptionRenewedEvent extends EnvelopeBase<'subscription.ren
   data: SubscriptionEventData;
 }
 
+/** A test send an org requested for this endpoint. It is never subscribed to and never retried; acknowledge it like any other type. */
+export interface WebhookTestEvent extends EnvelopeBase<'webhook.test'> {
+  data: {
+  message: string;
+};
+}
+
 export type KnownWebhookEnvelope =
   | BankCreditEvent
   | BankDebitEvent
@@ -166,7 +173,8 @@ export type KnownWebhookEnvelope =
   | SubscriptionCancelledEvent
   | SubscriptionExpiredEvent
   | SubscriptionPastDueEvent
-  | SubscriptionRenewedEvent;
+  | SubscriptionRenewedEvent
+  | WebhookTestEvent;
 
 /** An event type this SDK version does not know yet. Acknowledge it; do not fail. */
 export interface UnknownWebhookEnvelope extends EnvelopeBase<string> {
@@ -189,6 +197,7 @@ export const WEBHOOK_EVENT_TYPES = [
   'subscription.expired',
   'subscription.past_due',
   'subscription.renewed',
+  'webhook.test',
 ] as const;
 
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
