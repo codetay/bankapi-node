@@ -238,14 +238,13 @@ async function main() {
     // through the raw route (no /v2 prefix, no key); it needs no credit.
     try {
       const ocb = await client.banking.connection(env.E2E_OCB_CONNECTION_ID);
-      const qrCode = `NODEQR${Math.floor(Date.now() / 1000)}`;
-      const qrIntent = await client.banking.createPaymentIntent({
-        code: qrCode,
-        expectedAmountVnd: amount,
-      });
       if (ocb.bin === null || ocb.accountNumber === null) {
         softFail('F5a', `qr connection ${ocb.id} has no bin/account_number`);
       } else {
+        const qrIntent = await client.banking.createPaymentIntent({
+          code: `NODEQR${Math.floor(Date.now() / 1000)}`,
+          expectedAmountVnd: amount,
+        });
         const qr = await fetch(
           `${baseUrl}/qr/vietqr.png?${new URLSearchParams({
             bin: ocb.bin,
