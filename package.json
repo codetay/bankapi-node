@@ -64,6 +64,7 @@
     "sync-spec": "node scripts/sync-spec.mjs",
     "verify-spec": "node scripts/verify-spec.mjs",
     "gen:error-codes": "node scripts/gen-error-codes.mjs",
+    "smoke:e2e": "node scripts/e2e-smoke.mjs",
     "check:package": "npm run build && publint && attw --pack . --profile node16",
     "prepublishOnly": "npm test && npm run build"
   },
