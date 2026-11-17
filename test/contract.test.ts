@@ -58,8 +58,11 @@ function describeContract(
   name: string,
   calls: Call[],
   schemaFields: Record<string, string[]>,
+  extra: () => void = () => {},
 ): void {
   describe(name, () => {
+    extra();
+
     const rows = calls.map((call) => [call.method, call.path, call] as const);
 
     it.each(rows)('spec still serves %s %s', (method, path) => {
@@ -171,21 +174,53 @@ describeContract(
   },
 );
 
-// Still the 2.x webhook paths and Go schema names: red on purpose until S3 Task 5.
+const CONNECTOR_FIELDS = [
+  'id',
+  'config',
+  'event_types',
+  'active',
+  'description',
+  'failure_count',
+  'last_status_code',
+  'last_attempt_at',
+  'auto_disabled_at',
+  'created_at',
+  'updated_at',
+];
+
 describeContract(
   'connector contract',
   [
-    { method: 'get', path: '/webhooks', idempotent: false },
-    { method: 'post', path: '/webhooks', idempotent: true },
-    { method: 'get', path: '/webhooks/{endpointId}', idempotent: false },
-    { method: 'delete', path: '/webhooks/{endpointId}', idempotent: false },
-    { method: 'post', path: '/webhooks/{endpointId}/enable', idempotent: false },
-    { method: 'get', path: '/webhooks/{endpointId}/deliveries', idempotent: false },
+    { method: 'post', path: '/v2/connectors', idempotent: false },
+    { method: 'get', path: '/v2/connectors', idempotent: false },
+    { method: 'get', path: '/v2/connectors/{connector_id}', idempotent: false },
+    { method: 'delete', path: '/v2/connectors/{connector_id}', idempotent: false },
+    { method: 'patch', path: '/v2/connectors/{connector_id}', idempotent: false },
+    { method: 'get', path: '/v2/connectors/{connector_id}/deliveries', idempotent: false },
+    { method: 'post', path: '/v2/connectors/{connector_id}/rotate-secret', idempotent: false },
   ],
   {
-    EndpointBody: ['id', 'url', 'event_types', 'active', 'description', 'failure_count'],
-    CreateEndpointOutputBody: ['id', 'url', 'secret'],
-    DeliveryItem: ['id', 'event_type', 'attempt', 'status_code', 'error', 'created_at'],
+    ConnectorCreate: ['type', 'config', 'event_types', 'description'],
+    ConnectorUpdate: ['active'],
+    Connector: CONNECTOR_FIELDS,
+    CreatedConnector: [...CONNECTOR_FIELDS, 'secret'],
+    ConnectorSecret: ['secret', 'previous_expires_at'],
+    ConnectorDelivery: [
+      'delivery_id',
+      'event_type',
+      'attempt',
+      'status',
+      'status_code',
+      'error',
+      'transaction_id',
+      'attempted_at',
+    ],
+  },
+  () => {
+    it('the connector type enum still has webhook', () => {
+      const connectorType = spec.components.schemas.ConnectorType as { enum?: string[] };
+      expect(connectorType.enum).toContain('webhook');
+    });
   },
 );
 

@@ -36,7 +36,7 @@ export type {
   TransactionListOptions,
 } from './services/banking.js';
 export { WebhookEndpointService } from './services/webhook-endpoints.js';
-export type { CreateEndpointOptions, EndpointListOptions } from './services/webhook-endpoints.js';
+export type { EndpointListOptions } from './services/webhook-endpoints.js';
 export type {
   BankingSummary,
   Connection,
@@ -45,6 +45,7 @@ export type {
   CreatedEndpoint,
   Delivery,
   PaymentIntent,
+  RotatedSecret,
   Transaction,
   TransactionDetail,
   WebhookEndpoint,

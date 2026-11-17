@@ -180,75 +180,112 @@ export function toPaymentIntent(raw: Record<string, unknown>): PaymentIntent {
   };
 }
 
-/** GET /webhooks item (schema EndpointBody). Never carries the secret. */
+/**
+ * GET /v2/connectors item and GET /v2/connectors/{id} (schema Connector, type webhook).
+ * Never carries the secret.
+ */
 export interface WebhookEndpoint {
   id: string;
+  /** `config.url` as the API shows it: masked, so keep the id you got at create time. */
   url: string;
-  eventTypes: string[];
+  /** `null`: every public event type that is not opt-in. */
+  eventTypes: string[] | null;
   active: boolean;
   description: string;
   failureCount: number;
+  lastStatusCode: number | null;
+  lastAttemptAt: string | null;
+  autoDisabledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export function toWebhookEndpoint(raw: Record<string, unknown>): WebhookEndpoint {
   return {
     id: str(raw.id),
-    url: str(raw.url),
-    eventTypes: strList(raw.event_types),
+    url: str(record(raw.config).url),
+    eventTypes:
+      raw.event_types === undefined || raw.event_types === null ? null : strList(raw.event_types),
     active: bool(raw.active),
     description: str(raw.description),
     failureCount: num(raw.failure_count),
+    lastStatusCode: optNum(raw.last_status_code),
+    lastAttemptAt: optStr(raw.last_attempt_at),
+    autoDisabledAt: optStr(raw.auto_disabled_at),
+    createdAt: str(raw.created_at),
+    updatedAt: str(raw.updated_at),
   };
 }
 
-/** POST /webhooks result. The secret is shown ONLY here — store it now. */
+/**
+ * Keeps a signing secret out of console.log/util.inspect and JSON.stringify output:
+ * dumping the object while wiring an integration is the easiest way to leak it into a
+ * log file, and the literal marker makes the redaction visible instead of silently
+ * dropping the key. Reading `.secret` in code still works; persisting it requires
+ * reading `.secret` explicitly.
+ */
+function redactSecret<T extends { secret: string }>(value: T): T {
+  const redacted = () => ({ ...value, secret: '***redacted***' });
+  Object.defineProperty(value, Symbol.for('nodejs.util.inspect.custom'), {
+    value: redacted,
+    enumerable: false,
+  });
+  Object.defineProperty(value, 'toJSON', { value: redacted, enumerable: false });
+  return value;
+}
+
+/** POST /v2/connectors result (schema CreatedConnector). The secret is shown ONLY here — store it now. */
 export interface CreatedEndpoint {
   id: string;
+  /** Masked `config.url`, like every read. */
   url: string;
   secret: string;
 }
 
 export function toCreatedEndpoint(raw: Record<string, unknown>): CreatedEndpoint {
-  const endpoint: CreatedEndpoint = {
+  return redactSecret({
     id: str(raw.id),
-    url: str(raw.url),
+    url: str(record(raw.config).url),
     secret: str(raw.secret),
-  };
-  // Keep the signing secret out of console.log/util.inspect output: dumping
-  // this object while wiring an integration is the easiest way to leak it
-  // into a log file. Reading `.secret` in code still works.
-  Object.defineProperty(endpoint, Symbol.for('nodejs.util.inspect.custom'), {
-    value: () => ({ id: endpoint.id, url: endpoint.url, secret: '***redacted***' }),
-    enumerable: false,
   });
-  // JSON.stringify follows the same rule: serialized copies land in logs and
-  // crash dumps far more often than deliberate persistence, and the literal
-  // marker makes the redaction visible instead of silently dropping the key.
-  // Persisting the secret requires reading `.secret` explicitly.
-  Object.defineProperty(endpoint, 'toJSON', {
-    value: () => ({ id: endpoint.id, url: endpoint.url, secret: '***redacted***' }),
-    enumerable: false,
-  });
-  return endpoint;
 }
 
-/** GET /webhooks/{id}/deliveries item (schema DeliveryItem). */
+/** POST /v2/connectors/{id}/rotate-secret result (schema ConnectorSecret). Shown once. */
+export interface RotatedSecret {
+  secret: string;
+  /** Until when the secret before it still verifies; `null` when there was none to keep. */
+  previousExpiresAt: string | null;
+}
+
+export function toRotatedSecret(raw: Record<string, unknown>): RotatedSecret {
+  return redactSecret({
+    secret: str(raw.secret),
+    previousExpiresAt: optStr(raw.previous_expires_at),
+  });
+}
+
+/** GET /v2/connectors/{id}/deliveries item (schema ConnectorDelivery). */
 export interface Delivery {
-  id: string;
+  deliveryId: string;
   eventType: string;
   attempt: number;
+  /** `succeeded`, `failed` or `skipped`. */
+  status: string;
   statusCode: number | null;
-  error: string;
-  createdAt: string;
+  error: string | null;
+  transactionId: string | null;
+  attemptedAt: string;
 }
 
 export function toDelivery(raw: Record<string, unknown>): Delivery {
   return {
-    id: str(raw.id),
+    deliveryId: str(raw.delivery_id),
     eventType: str(raw.event_type),
     attempt: num(raw.attempt),
+    status: str(raw.status),
     statusCode: optNum(raw.status_code),
-    error: str(raw.error),
-    createdAt: str(raw.created_at),
+    error: optStr(raw.error),
+    transactionId: optStr(raw.transaction_id),
+    attemptedAt: str(raw.attempted_at),
   };
 }

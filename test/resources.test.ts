@@ -7,6 +7,7 @@ import {
   toCreatedEndpoint,
   toDelivery,
   toPaymentIntent,
+  toRotatedSecret,
   toTransaction,
   toWebhookEndpoint,
 } from '../src/resources/index.js';
@@ -255,38 +256,92 @@ describe('toPaymentIntent', () => {
 describe('toWebhookEndpoint', () => {
   it('maps every documented field and never carries a secret', () => {
     const endpoint = toWebhookEndpoint({
-      id: 'wh_1',
-      url: 'https://shop.test/hook',
-      event_types: ['bank.credit'],
-      active: true,
+      id: 'cnr_1',
+      type: 'webhook',
+      config: { url: 'https://sh**.test/…hook' },
+      event_types: ['banking.credit'],
+      active: false,
       description: 'shop',
-      failure_count: 0,
+      failure_count: 5,
+      last_status_code: 500,
+      last_attempt_at: '2026-11-17T00:01:00Z',
+      auto_disabled_at: '2026-11-17T00:02:00Z',
+      retry_until: '2026-11-18T00:00:00Z',
+      created_at: '2026-11-17T00:00:00Z',
+      updated_at: '2026-11-17T00:02:00Z',
       secret: 'whsec_should_be_ignored',
     });
     expect(endpoint).toEqual({
-      id: 'wh_1',
-      url: 'https://shop.test/hook',
-      eventTypes: ['bank.credit'],
-      active: true,
+      id: 'cnr_1',
+      url: 'https://sh**.test/…hook',
+      eventTypes: ['banking.credit'],
+      active: false,
       description: 'shop',
-      failureCount: 0,
+      failureCount: 5,
+      lastStatusCode: 500,
+      lastAttemptAt: '2026-11-17T00:01:00Z',
+      autoDisabledAt: '2026-11-17T00:02:00Z',
+      createdAt: '2026-11-17T00:00:00Z',
+      updatedAt: '2026-11-17T00:02:00Z',
     });
+  });
+
+  it('toWebhookEndpoint reads url from config.url and event_types null as null', () => {
+    const endpoint = toWebhookEndpoint({
+      id: 'cnr_1',
+      url: 'https://root-url-is-not-v2.test/hook',
+      config: { url: 'https://sh**.test/…hook' },
+      event_types: null,
+    });
+    expect(endpoint.url).toBe('https://sh**.test/…hook');
+    expect(endpoint.eventTypes).toBeNull();
+    expect(endpoint.lastStatusCode).toBeNull();
+    expect(endpoint.lastAttemptAt).toBeNull();
+    expect(endpoint.autoDisabledAt).toBeNull();
+    expect(toWebhookEndpoint({ id: 'cnr_1' }).eventTypes).toBeNull();
   });
 });
 
 describe('toDelivery', () => {
-  it('maps status_code to null when absent', () => {
-    const delivery = toDelivery({ id: 'dl_1', event_type: 'bank.credit', attempt: 2 });
-    expect(delivery.statusCode).toBeNull();
-    expect(delivery.attempt).toBe(2);
+  it('toDelivery maps status_code, error and transaction_id to null when absent', () => {
+    const delivery = toDelivery({
+      delivery_id: 'd1',
+      event_type: 'banking.credit',
+      attempt: 2,
+      status: 'failed',
+      attempted_at: '2026-11-17T00:00:01Z',
+    });
+    expect(delivery).toEqual({
+      deliveryId: 'd1',
+      eventType: 'banking.credit',
+      attempt: 2,
+      status: 'failed',
+      statusCode: null,
+      error: null,
+      transactionId: null,
+      attemptedAt: '2026-11-17T00:00:01Z',
+    });
+  });
+
+  it('maps a failed attempt with its status code and error', () => {
+    const delivery = toDelivery({ delivery_id: 'd1', status_code: 500, error: 'HTTP 500' });
+    expect(delivery.statusCode).toBe(500);
+    expect(delivery.error).toBe('HTTP 500');
   });
 });
 
 describe('toCreatedEndpoint', () => {
-  const raw = { id: 'wh_1', url: 'https://shop.test/hook', secret: 'whsec_supersecret' };
+  const raw = {
+    id: 'cnr_1',
+    type: 'webhook',
+    config: { url: 'https://sh**.test/…hook' },
+    secret: 'whsec_supersecret',
+  };
 
-  it('exposes the secret to code', () => {
-    expect(toCreatedEndpoint(raw).secret).toBe('whsec_supersecret');
+  it('exposes the secret to code and reads url from config.url', () => {
+    const created = toCreatedEndpoint(raw);
+    expect(created.secret).toBe('whsec_supersecret');
+    expect(created.url).toBe('https://sh**.test/…hook');
   });
 
   it('redacts the secret when the object is inspected or logged', () => {
@@ -306,6 +361,37 @@ describe('toCreatedEndpoint', () => {
     expect(Object.keys(endpoint)).toEqual(['id', 'url', 'secret']);
     for (const key of [Symbol.for('nodejs.util.inspect.custom'), 'toJSON'] as const) {
       expect(Object.getOwnPropertyDescriptor(endpoint, key)?.enumerable).toBe(false);
+    }
+  });
+});
+
+describe('toRotatedSecret', () => {
+  const raw = { secret: 'whsec_rotated', previous_expires_at: '2026-11-18T00:00:00Z' };
+
+  it('exposes the new secret and when the previous one stops verifying', () => {
+    const rotated = toRotatedSecret(raw);
+    expect(rotated.secret).toBe('whsec_rotated');
+    expect(rotated.previousExpiresAt).toBe('2026-11-18T00:00:00Z');
+    expect(toRotatedSecret({ secret: 'whsec_rotated' }).previousExpiresAt).toBeNull();
+  });
+
+  it('redacts the secret when the object is inspected or logged', () => {
+    const printed = inspect(toRotatedSecret(raw));
+    expect(printed).not.toContain('whsec_rotated');
+    expect(printed).toContain('***redacted***');
+  });
+
+  it('redacts the secret in JSON.stringify output', () => {
+    const serialized = JSON.stringify(toRotatedSecret(raw));
+    expect(serialized).not.toContain('whsec_rotated');
+    expect(serialized).toContain('***redacted***');
+  });
+
+  it('keeps the redaction hooks off enumerable keys', () => {
+    const rotated = toRotatedSecret(raw);
+    expect(Object.keys(rotated)).toEqual(['secret', 'previousExpiresAt']);
+    for (const key of [Symbol.for('nodejs.util.inspect.custom'), 'toJSON'] as const) {
+      expect(Object.getOwnPropertyDescriptor(rotated, key)?.enumerable).toBe(false);
     }
   });
 });

@@ -2,9 +2,11 @@ import { Page } from '../page.js';
 import {
   type CreatedEndpoint,
   type Delivery,
+  type RotatedSecret,
   type WebhookEndpoint,
   toCreatedEndpoint,
   toDelivery,
+  toRotatedSecret,
   toWebhookEndpoint,
 } from '../resources/index.js';
 import type { Transport } from '../transport.js';
@@ -15,37 +17,28 @@ export interface EndpointListOptions {
   cursor?: string;
 }
 
-export interface CreateEndpointOptions {
-  /** Defaults to a generated crypto.randomUUID() when omitted. */
-  idempotencyKey?: string;
-}
-
+/** Webhook endpoints are the `webhook` connectors of /v2/connectors. */
 export class WebhookEndpointService {
   constructor(private readonly transport: Transport) {}
 
   /**
-   * x-idempotent: retried with the same key, this replays the first response.
+   * Not idempotent: after a timeout, call all() before creating again.
    * The returned secret is shown only here — store it before it is lost.
    */
-  async create(
-    url: string,
-    eventTypes: string[],
-    description = '',
-    options: CreateEndpointOptions = {},
-  ): Promise<CreatedEndpoint> {
+  async create(url: string, eventTypes: string[], description = ''): Promise<CreatedEndpoint> {
     return toCreatedEndpoint(
       await this.transport.request(
         'POST',
-        '/webhooks',
+        '/connectors',
         {},
-        { url, event_types: eventTypes, description },
-        { idempotencyKey: options.idempotencyKey ?? crypto.randomUUID() },
+        { type: 'webhook', config: { url }, event_types: eventTypes, description },
       ),
     );
   }
 
   async all(options: EndpointListOptions = {}): Promise<Page<WebhookEndpoint>> {
-    const data = await this.transport.request('GET', '/webhooks', {
+    const data = await this.transport.request('GET', '/connectors', {
+      type: 'webhook',
       limit: options.limit,
       cursor: options.cursor,
     });
@@ -57,27 +50,43 @@ export class WebhookEndpointService {
 
   async get(id: string): Promise<WebhookEndpoint> {
     return toWebhookEndpoint(
-      await this.transport.request('GET', `/webhooks/${encodeURIComponent(id)}`),
+      await this.transport.request('GET', `/connectors/${encodeURIComponent(id)}`),
     );
   }
 
   async delete(id: string): Promise<void> {
-    await this.transport.request('DELETE', `/webhooks/${encodeURIComponent(id)}`);
+    await this.transport.request('DELETE', `/connectors/${encodeURIComponent(id)}`);
   }
 
+  /** Switching on also ends a pause and starts the failure count again. */
   async enable(id: string): Promise<void> {
-    await this.transport.request('POST', `/webhooks/${encodeURIComponent(id)}/enable`);
+    await this.setActive(id, true);
+  }
+
+  async disable(id: string): Promise<void> {
+    await this.setActive(id, false);
+  }
+
+  /** The new secret is shown only here; the previous one verifies until `previousExpiresAt`. */
+  async rotateSecret(id: string): Promise<RotatedSecret> {
+    return toRotatedSecret(
+      await this.transport.request('POST', `/connectors/${encodeURIComponent(id)}/rotate-secret`),
+    );
   }
 
   async deliveries(id: string, options: EndpointListOptions = {}): Promise<Page<Delivery>> {
     const data = await this.transport.request(
       'GET',
-      `/webhooks/${encodeURIComponent(id)}/deliveries`,
+      `/connectors/${encodeURIComponent(id)}/deliveries`,
       { limit: options.limit, cursor: options.cursor },
     );
 
     return new Page(items(data).map(toDelivery), nextCursor(data), (cursor) =>
       this.deliveries(id, { ...options, cursor }),
     );
+  }
+
+  private async setActive(id: string, active: boolean): Promise<void> {
+    await this.transport.request('PATCH', `/connectors/${encodeURIComponent(id)}`, {}, { active });
   }
 }
