@@ -21,6 +21,12 @@ describe('generated webhook events', () => {
     expect(source).toContain('period_end?: string | null;');
   });
 
+  it('keeps every JSDoc comment on one line, even when the spec description wraps', () => {
+    for (const line of source.split('\n')) {
+      if (line.trimStart().startsWith('/**')) expect(line, line).toMatch(/\*\/$/);
+    }
+  });
+
   it('lists the 13 v2 event types', () => {
     expect([...WEBHOOK_EVENT_TYPES]).toEqual([
       'banking.credit',

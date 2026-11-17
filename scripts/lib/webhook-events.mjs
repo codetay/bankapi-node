@@ -47,7 +47,8 @@ function objectBody(schema, deps) {
   if (props.length === 0) return 'Record<string, unknown>';
   const required = new Set(schema.required ?? []);
   const lines = props.map(([name, p]) => {
-    const doc = p.description ? `  /** ${p.description} */\n` : '';
+    // API-RS descriptions wrap; a raw newline would leave a JSDoc line without its ` * `.
+    const doc = p.description ? `  /** ${p.description.replace(/\s*\n\s*/g, ' ')} */\n` : '';
     return `${doc}  ${name}${required.has(name) ? '' : '?'}: ${tsType(p, deps)};`;
   });
   return `{\n${lines.join('\n')}\n}`;

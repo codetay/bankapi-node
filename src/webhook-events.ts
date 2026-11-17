@@ -23,8 +23,7 @@ export interface BankingCreditWebhookData {
   transaction_date: string;
   /** `btx_…`, the transaction's id in the API. */
   transaction_id: string;
-  /** The virtual account the money was paid into, when one of the org's matched; absent
-otherwise. */
+  /** The virtual account the money was paid into, when one of the org's matched; absent otherwise. */
   va_number?: string;
 }
 
