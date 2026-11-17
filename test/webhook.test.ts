@@ -6,8 +6,10 @@ import { isWebhookEvent, WEBHOOK_EVENT_TYPES } from '../src/webhook-events.js';
 
 interface Vector {
   name: string;
+  note: string;
   secret: string;
   previous_secret?: string;
+  must_ignore?: boolean;
   msg_id: string;
   timestamp: string;
   body: string;
@@ -15,12 +17,12 @@ interface Vector {
 }
 
 const file = JSON.parse(
-  readFileSync(new URL('./fixtures/webhook_vectors.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('./fixtures/webhook_vectors_v2.json', import.meta.url), 'utf8'),
 ) as { tolerance_seconds: number; standard_webhooks_reference: Vector; vectors: Vector[] };
 
 function byName(name: string): Vector {
   const v = file.vectors.find((x) => x.name === name);
-  if (!v) throw new Error(`vector ${name} missing from the GO-KIT fixture`);
+  if (!v) throw new Error(`vector ${name} missing from the KIT-RS fixture`);
   return v;
 }
 
@@ -30,14 +32,19 @@ const headersFor = (v: Vector): Record<string, string> => ({
   'webhook-signature': v.signature_header,
 });
 const at = (v: Vector) => ({ now: Number(v.timestamp) });
+const eventOf = (v: Vector) => constructEvent(v.body, headersFor(v), v.secret, at(v));
 
-describe('golden vectors from GO-KIT', () => {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const mustIgnore = file.vectors.filter((v) => v.must_ignore === true);
+
+describe('golden vectors from KIT-RS', () => {
   it('verifies every vector, and a rotating one with either secret', () => {
-    expect(file.vectors.length).toBeGreaterThanOrEqual(7);
+    expect(file.vectors).toHaveLength(9);
+    expect(file.vectors.filter((v) => v.previous_secret)).not.toHaveLength(0);
     for (const v of file.vectors) {
-      const event = constructEvent(v.body, headersFor(v), v.secret, at(v));
+      const event = eventOf(v);
       expect(event.webhookId).toBe(v.msg_id);
-      expect(event.api_version).toBe('v1');
+      expect(event.api_version).toBe('2');
       if (v.previous_secret) {
         expect(constructEvent(v.body, headersFor(v), v.previous_secret, at(v)).id).toBe(event.id);
       }
@@ -45,9 +52,9 @@ describe('golden vectors from GO-KIT', () => {
   });
 
   it('verifies a Buffer byte for byte', () => {
-    const v = byName('bank.credit');
+    const v = byName('banking.credit');
     expect(constructEvent(Buffer.from(v.body, 'utf8'), headersFor(v), v.secret, at(v)).type).toBe(
-      'bank.credit',
+      'banking.credit',
     );
   });
 
@@ -56,48 +63,71 @@ describe('golden vectors from GO-KIT', () => {
     expect(verifySignature(v.body, headersFor(v), v.secret, at(v)).webhookId).toBe(v.msg_id);
   });
 
-  it('TestLegacySecretVerifies: a base64url secret decodes to the same key', () => {
-    const v = byName('bank.credit.legacy_urlsafe_secret');
-    expect(v.secret).toMatch(/[-_]/);
-    expect(decodeSecret(v.secret)).toHaveLength(32);
-    expect(constructEvent(v.body, headersFor(v), v.secret, at(v)).type).toBe('bank.credit');
+  it('a base64url secret decodes to the same key', () => {
+    const v = byName('banking.credit');
+    const key = decodeSecret(v.secret);
+    const urlSafe = `whsec_${key.toString('base64url')}`;
+    expect(urlSafe).not.toContain('=');
+    expect(decodeSecret(urlSafe).equals(key)).toBe(true);
+    expect(constructEvent(v.body, headersFor(v), urlSafe, at(v)).webhookId).toBe(v.msg_id);
   });
 
-  it('TestFlowOutputNarrowsToItsOwnType', () => {
-    const v = byName('flow.output');
-    const event = constructEvent(v.body, headersFor(v), v.secret, at(v));
-    expect(isWebhookEvent(event, 'bank.credit')).toBe(false);
+  it('narrows banking.credit and reads amount_vnd', () => {
+    const event = eventOf(byName('banking.credit'));
+    if (!isWebhookEvent(event, 'banking.credit')) throw new Error('banking.credit did not narrow');
+    expect(typeof event.data.amount_vnd).toBe('number');
+    expect(event.data.transaction_id).toMatch(/^btx_/);
+    expect(event.org_id).toMatch(UUID);
+  });
+
+  it('marks exactly banking.payment_matched, flow.output and connector.test must_ignore', () => {
+    expect(mustIgnore.map((v) => v.name).sort()).toEqual([
+      'banking.payment_matched',
+      'connector.test',
+      'flow.output',
+    ]);
+  });
+
+  it.each(mustIgnore.map((v) => [v.name, v] as const))(
+    'never narrows a must_ignore vector to banking.credit: %s',
+    (_name, v) => {
+      const event = eventOf(v);
+      expect(event.webhookId).toBe(v.msg_id);
+      expect(isWebhookEvent(event, 'banking.credit')).toBe(false);
+    },
+  );
+
+  it('narrows flow.output to its own type with a FlowOutputTrigger', () => {
+    const event = eventOf(byName('flow.output'));
     if (!isWebhookEvent(event, 'flow.output')) throw new Error('flow.output did not narrow');
-    expect(event.trigger.type).toBe('bank.credit');
-    expect(event.data).toEqual({ order: 'DH1245', paid: true });
+    expect(event.trigger.type).toBe('banking.credit');
+    expect('amount_vnd' in event.data).toBe(true);
   });
 
-  it('TestUnknownTypeParsesAsUnknownEnvelope', () => {
-    const v = byName('unknown.future_event');
-    const event = constructEvent(v.body, headersFor(v), v.secret, at(v));
-    expect(event.type).toBe('bank.future_event');
+  it('parses an unknown type as an UnknownWebhookEnvelope', () => {
+    const event = eventOf(byName('unknown.future_event'));
+    expect(event.type).toBe('banking.future_event');
     expect((WEBHOOK_EVENT_TYPES as readonly string[]).includes(event.type)).toBe(false);
     expect(event.data).toEqual({ note: 'receivers must accept unknown types: A & B <tag> > end' });
   });
 
   it('keeps the exact digits above 2^53 in the signed body (JSON.parse rounds them: documented)', () => {
-    const v = byName('bank.credit.amount_above_2_pow_53');
-    expect(v.body).toContain('"amount":9007199254740993');
-    const event = constructEvent(v.body, headersFor(v), v.secret, at(v));
-    if (!isWebhookEvent(event, 'bank.credit')) throw new Error('not bank.credit');
-    expect(Number.isSafeInteger(event.data.amount)).toBe(false);
+    const v = byName('banking.credit.amount_above_2_pow_53');
+    expect(v.body).toContain('"amount_vnd":9007199254740993');
+    const event = eventOf(v);
+    if (!isWebhookEvent(event, 'banking.credit')) throw new Error('not banking.credit');
+    expect(Number.isSafeInteger(event.data.amount_vnd)).toBe(false);
   });
 
   it('types a calendar-date quota period as data, not an instant', () => {
-    const v = byName('org.quota_exceeded');
-    const event = constructEvent(v.body, headersFor(v), v.secret, at(v));
-    if (!isWebhookEvent(event, 'org.quota_exceeded')) throw new Error('not org.quota_exceeded');
+    const event = eventOf(byName('quota.exceeded'));
+    if (!isWebhookEvent(event, 'quota.exceeded')) throw new Error('not quota.exceeded');
     expect(event.data.period_end_exclusive).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });
 
 describe('verification failures', () => {
-  const v = byName('bank.credit');
+  const v = byName('banking.credit');
 
   it('TestToleranceIsSymmetric', () => {
     const ts = Number(v.timestamp);

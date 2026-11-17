@@ -11,7 +11,7 @@ export interface VerifiedDelivery {
   timestamp: number;
 }
 
-/** A verified BankAPI webhook: the v1 envelope plus its delivery headers. */
+/** A verified BankAPI webhook: the envelope v2 plus its delivery headers. */
 export type WebhookEvent = WebhookEnvelope & VerifiedDelivery;
 
 export type HeaderBag = Headers | Record<string, string | string[] | undefined>;
@@ -82,7 +82,7 @@ export function verifySignature(
 }
 
 /**
- * Verifies a BankAPI webhook and parses its v1 envelope. An event type this
+ * Verifies a BankAPI webhook and parses its envelope v2. An event type this
  * SDK does not know is returned as an UnknownWebhookEnvelope, never an error.
  */
 export function constructEvent(

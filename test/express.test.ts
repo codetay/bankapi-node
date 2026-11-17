@@ -8,11 +8,18 @@ const TS = '1735689600';
 const ID = 'msg_1';
 const BODY = JSON.stringify({
   id: '0b6f3c1e-0000-4000-8000-000000000001',
-  type: 'bank.credit',
-  api_version: 'v1',
+  type: 'banking.credit',
+  api_version: '2',
   created_at: '2025-01-01T00:00:00Z',
   org_id: '01a0a592-0000-7000-8000-000000000001',
-  data: { amount: 150000 },
+  data: {
+    transaction_id: 'btx_1',
+    amount_vnd: 50000,
+    bank: 'mb',
+    bank_ref: 'R1',
+    description: 'x',
+    transaction_date: '2026-11-17T00:00:00Z',
+  },
 });
 
 function sign(body: string, timestamp = TS): string {
@@ -87,11 +94,18 @@ describe('bankapiWebhook — accepted deliveries', () => {
     expect(next).toHaveBeenCalledWith();
     expect(req.bankapiEvent).toEqual({
       id: '0b6f3c1e-0000-4000-8000-000000000001',
-      type: 'bank.credit',
-      api_version: 'v1',
+      type: 'banking.credit',
+      api_version: '2',
       created_at: '2025-01-01T00:00:00Z',
       org_id: '01a0a592-0000-7000-8000-000000000001',
-      data: { amount: 150000 },
+      data: {
+        transaction_id: 'btx_1',
+        amount_vnd: 50000,
+        bank: 'mb',
+        bank_ref: 'R1',
+        description: 'x',
+        transaction_date: '2026-11-17T00:00:00Z',
+      },
       webhookId: ID,
       timestamp: Number(TS),
     });
@@ -102,7 +116,7 @@ describe('bankapiWebhook — accepted deliveries', () => {
     const res = makeRes();
     const next = await run(req, res, { secret: SECRET, now });
     expect(next).toHaveBeenCalledWith();
-    expect(req.bankapiEvent?.type).toBe('bank.credit');
+    expect(req.bankapiEvent?.type).toBe('banking.credit');
   });
 
   it('reuses a string body', async () => {
