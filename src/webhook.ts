@@ -25,8 +25,8 @@ export interface ConstructEventOptions {
 
 /**
  * The HMAC key of a whsec_ secret. Node's base64 decoder accepts the standard
- * and the URL-safe alphabet, padded or not, so secrets minted before envelope
- * v1 (base64url) decode to the same key.
+ * and the URL-safe alphabet, padded or not, so older secrets minted by the Go
+ * platform (base64url) decode to the same key.
  */
 export function decodeSecret(secret: string): Buffer {
   const encoded = secret.startsWith(SECRET_PREFIX) ? secret.slice(SECRET_PREFIX.length) : secret;
