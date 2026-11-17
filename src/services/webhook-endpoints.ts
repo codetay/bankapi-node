@@ -22,7 +22,8 @@ export class WebhookEndpointService {
   constructor(private readonly transport: Transport) {}
 
   /**
-   * Not idempotent: after a timeout, call all() before creating again.
+   * Not idempotent: after a timeout, call all() before creating again, and
+   * match on `description`: the url reads back masked, so it cannot be matched.
    * The returned secret is shown only here — store it before it is lost.
    */
   async create(url: string, eventTypes: string[], description = ''): Promise<CreatedEndpoint> {
