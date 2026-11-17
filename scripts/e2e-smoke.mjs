@@ -225,7 +225,7 @@ async function main() {
     // design): the contract says bin absent = hide the QR, so a client shows none.
     // The render path itself is unit-tested (test/vietqr-url.test.ts). No later step
     // reads this, so a FAIL here is counted and the run still proves F4 and F5 (a).
-    if (vietqrUrl(baseUrl, conn, intent) !== null) {
+    if (conn.bin !== null || vietqrUrl(baseUrl, conn, intent) !== null) {
       softFail('F5a', `qr hidden expected: connection ${conn.id} has bin ${conn.bin}`);
     } else {
       pass('F5a qr hidden', `connection ${conn.id} bank=${conn.bankCode} has no bin`);
