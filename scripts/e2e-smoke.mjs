@@ -8,8 +8,8 @@
 // Optional: E2E_ENV_FILE ($DEV_SECRETS_HOST/e2e.env), DEV_DOCKER_CONTEXT
 // (orbstack), SMOKE_BIND (127.0.0.1), SMOKE_PORT (59601), SMOKE_AMOUNT_VND
 // (50000), SMOKE_WAIT_SECONDS (90), SMOKE_QUIET_SECONDS (15), SMOKE_BASE_URL.
-// From the env file it reads only BANKAPI_BASE_URL, BANKAPI_KEY, E2E_CONNECTION_ID
-// and E2E_OCB_CONNECTION_ID. It prints no secret: not the key, not the endpoint secret.
+// From the env file it reads only BANKAPI_BASE_URL, BANKAPI_KEY and E2E_CONNECTION_ID.
+// It prints no secret: not the key, not the endpoint secret.
 //
 // Exit 0 only when every step prints PASS; 1 on any FAIL (each FAIL but the QR one
 // stops the run); 2 on missing input.
@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { isAbsolute, join } from 'node:path';
 import { promisify } from 'node:util';
+import { vietqrUrl } from './lib/vietqr-url.mjs';
 
 const DESCRIPTION = 'e2e smoke: node';
 const RELAY_URL = 'https://relay.stub.test:8443/node/hooks/bankapi';
@@ -66,12 +67,7 @@ function positiveInt(name, fallback) {
 
 // KEY=VALUE lines; only the four named keys are kept, so nothing else in the file is held.
 function readEnvFile(path) {
-  const wanted = new Set([
-    'BANKAPI_BASE_URL',
-    'BANKAPI_KEY',
-    'E2E_CONNECTION_ID',
-    'E2E_OCB_CONNECTION_ID',
-  ]);
+  const wanted = new Set(['BANKAPI_BASE_URL', 'BANKAPI_KEY', 'E2E_CONNECTION_ID']);
   const out = {};
   let text;
   try {
@@ -225,48 +221,14 @@ async function main() {
     if (intent.status !== 'pending') fail('intent', `${intent.id} status=${intent.status}`);
     pass('intent', `${intent.id} code=${code} status=pending`);
 
-    // QR (ruling CD-11). No later step reads it, so a FAIL here is counted and the
-    // run still proves F4 and F5 (a); the exit code reports it.
-    // (1) The credit connection has no verified BIN (MB, KLB by design): the
-    // contract says bin absent = hide the QR, so a client shows none.
-    if (conn.bin !== null) {
+    // QR (ruling CD-13). The credit connection has no verified BIN (MB, KLB by
+    // design): the contract says bin absent = hide the QR, so a client shows none.
+    // The render path itself is unit-tested (test/vietqr-url.test.ts). No later step
+    // reads this, so a FAIL here is counted and the run still proves F4 and F5 (a).
+    if (vietqrUrl(baseUrl, conn, intent) !== null) {
       softFail('F5a', `qr hidden expected: connection ${conn.id} has bin ${conn.bin}`);
     } else {
       pass('F5a qr hidden', `connection ${conn.id} bank=${conn.bankCode} has no bin`);
-    }
-    // (2) VietQR render: a second intent paid to the OCB connection (BIN 970448),
-    // through the raw route (no /v2 prefix, no key); it needs no credit.
-    try {
-      const ocb = await client.banking.connection(env.E2E_OCB_CONNECTION_ID);
-      if (ocb.bin === null || ocb.accountNumber === null) {
-        softFail('F5a', `qr connection ${ocb.id} has no bin/account_number`);
-      } else {
-        const qrIntent = await client.banking.createPaymentIntent({
-          code: `NODEQR${Math.floor(Date.now() / 1000)}`,
-          expectedAmountVnd: amount,
-        });
-        const qr = await fetch(
-          `${baseUrl}/qr/vietqr.png?${new URLSearchParams({
-            bin: ocb.bin,
-            account: ocb.accountNumber,
-            amount: String(qrIntent.expectedAmountVnd),
-            memo: qrIntent.code,
-          })}`,
-        );
-        const png = Buffer.from(await qr.arrayBuffer());
-        const type = qr.headers.get('content-type') ?? '';
-        const signature = png.subarray(0, 8).toString('hex') === '89504e470d0a1a0a';
-        if (qr.status !== 200 || !type.startsWith('image/png') || !signature) {
-          softFail('F5a', `qr status=${qr.status} content-type=${type} bytes=${png.length}`);
-        } else {
-          pass(
-            'F5a qr',
-            `${qrIntent.id} connection ${ocb.id} bank=${ocb.bankCode} bin=${ocb.bin} amount=${qrIntent.expectedAmountVnd} status=200 bytes=${png.length}`,
-          );
-        }
-      }
-    } catch (err) {
-      softFail('F5a', `qr ${problemOf(err)}`);
     }
 
     // Credit through the stubs container, without a shell.
