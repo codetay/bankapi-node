@@ -67,10 +67,11 @@ function requireSecureBaseUrl(baseUrl: string): string {
     );
   }
 
+  // Any /v<n> suffix: a 2.x baseUrl ending in the old version would otherwise call …/<old>/v2/….
   const trimmed = baseUrl.trim().replace(/\/+$/, '');
-  if (trimmed.endsWith(API_VERSION_PATH)) {
+  if (/\/v\d+$/.test(trimmed)) {
     throw new TypeError(
-      'baseUrl must be the API origin (e.g. https://acme.bankapi.vn); the SDK appends /v1',
+      `baseUrl must be the API origin (e.g. https://acme.bankapi.vn); the SDK appends ${API_VERSION_PATH}`,
     );
   }
 

@@ -26,9 +26,9 @@ function make(queue: Array<Response | Error>, overrides: Record<string, unknown>
 describe('Transport request shape', () => {
   it('sends the API key, accept and user-agent headers', async () => {
     const { transport, stub } = make([jsonResponse({ ok: true })]);
-    await transport.request('GET', '/banking/summary');
+    await transport.request('GET', '/bank-transactions/summary');
     const call = stub.calls[0]!;
-    expect(call.url).toBe('https://api.bankapi.vn/v1/banking/summary');
+    expect(call.url).toBe('https://api.bankapi.vn/v2/bank-transactions/summary');
     expect(call.headers.get('x-api-key')).toBe('bk_test_key');
     expect(call.headers.get('accept')).toBe('application/json');
     expect(call.headers.get('user-agent')).toBe(`bankapi-node/${VERSION}`);
@@ -36,25 +36,25 @@ describe('Transport request shape', () => {
 
   it('appends the query string and drops undefined values', async () => {
     const { transport, stub } = make([jsonResponse({ ok: true })]);
-    await transport.request('GET', '/banking/transactions', {
+    await transport.request('GET', '/bank-transactions', {
       limit: 50,
       cursor: undefined,
       q: 'thanh toan',
     });
     expect(stub.calls[0]!.url).toBe(
-      'https://api.bankapi.vn/v1/banking/transactions?limit=50&q=thanh+toan',
+      'https://api.bankapi.vn/v2/bank-transactions?limit=50&q=thanh+toan',
     );
   });
 
   it('omits the query string entirely when nothing is set', async () => {
     const { transport, stub } = make([jsonResponse({ ok: true })]);
-    await transport.request('GET', '/webhooks', { limit: undefined });
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/webhooks');
+    await transport.request('GET', '/connectors', { limit: undefined });
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v2/connectors');
   });
 
   it('sends a JSON body with a content-type on mutations', async () => {
     const { transport, stub } = make([jsonResponse({ ok: true })]);
-    await transport.request('POST', '/webhooks', {}, { url: 'https://x.test' });
+    await transport.request('POST', '/connectors', {}, { url: 'https://x.test' });
     const call = stub.calls[0]!;
     expect(call.method).toBe('POST');
     expect(call.headers.get('content-type')).toBe('application/json');
@@ -65,19 +65,19 @@ describe('Transport request shape', () => {
     const { transport, stub } = make([jsonResponse({ ok: true })], {
       baseUrl: 'https://api.bankapi.vn/',
     });
-    await transport.request('GET', '/webhooks');
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/webhooks');
+    await transport.request('GET', '/connectors');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v2/connectors');
   });
 });
 
 describe('API_VERSION_PATH', () => {
-  it('joins the base URL under /v1 for every path, with and without a query', async () => {
-    expect(API_VERSION_PATH).toBe('/v1');
+  it('joins the base URL under /v2 for every path, with and without a query', async () => {
+    expect(API_VERSION_PATH).toBe('/v2');
     const { transport, stub } = make([jsonResponse({ ok: true }), jsonResponse({ ok: true })]);
-    await transport.request('GET', '/banking/summary');
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/banking/summary');
-    await transport.request('GET', '/banking/summary', { days: 7 });
-    expect(stub.calls[1]!.url).toBe('https://api.bankapi.vn/v1/banking/summary?days=7');
+    await transport.request('GET', '/bank-transactions/summary');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v2/bank-transactions/summary');
+    await transport.request('GET', '/bank-transactions/summary', { days: 7 });
+    expect(stub.calls[1]!.url).toBe('https://api.bankapi.vn/v2/bank-transactions/summary?days=7');
   });
 });
 
@@ -86,7 +86,7 @@ describe('Idempotency-Key', () => {
     const { transport, stub } = make([jsonResponse({ ok: true })]);
     await transport.request(
       'POST',
-      '/webhooks',
+      '/connectors',
       {},
       { url: 'https://x.test' },
       {
@@ -101,7 +101,7 @@ describe('Idempotency-Key', () => {
     await expect(
       transport.request(
         'POST',
-        '/webhooks',
+        '/connectors',
         {},
         { url: 'https://x.test' },
         {
@@ -117,7 +117,7 @@ describe('Idempotency-Key', () => {
     await expect(
       transport.request(
         'POST',
-        '/webhooks',
+        '/connectors',
         {},
         { url: 'https://x.test' },
         {
@@ -132,24 +132,26 @@ describe('Idempotency-Key', () => {
 describe('Transport decoding', () => {
   it('returns the decoded object on 2xx', async () => {
     const { transport } = make([jsonResponse({ count: 3 })]);
-    await expect(transport.request('GET', '/banking/summary')).resolves.toEqual({ count: 3 });
+    await expect(transport.request('GET', '/bank-transactions/summary')).resolves.toEqual({
+      count: 3,
+    });
   });
 
   it('returns an empty object for an empty 2xx body', async () => {
     const { transport } = make([new Response(null, { status: 204 })]);
-    await expect(transport.request('DELETE', '/webhooks/wh_1')).resolves.toEqual({});
+    await expect(transport.request('DELETE', '/connectors/cnr_1')).resolves.toEqual({});
   });
 
   it('throws MalformedResponseError when a 2xx body is not JSON', async () => {
     const { transport } = make([new Response('<html>captive portal</html>', { status: 200 })]);
-    await expect(transport.request('GET', '/banking/summary')).rejects.toBeInstanceOf(
+    await expect(transport.request('GET', '/bank-transactions/summary')).rejects.toBeInstanceOf(
       MalformedResponseError,
     );
   });
 
   it('still maps errors by status when the error body is not problem+json', async () => {
     const { transport } = make([new Response('<html>bad gateway</html>', { status: 502 })]);
-    const err = await transport.request('POST', '/webhooks').catch((e: unknown) => e);
+    const err = await transport.request('POST', '/connectors').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(BankApiError);
     expect((err as BankApiError).status).toBe(502);
   });
@@ -160,7 +162,7 @@ describe('Transport error mapping', () => {
     const { transport } = make([
       jsonResponse({ title: 'Bad Request', detail: 'limit too large' }, { status: 400 }),
     ]);
-    const err = await transport.request('GET', '/banking/transactions').catch((e: unknown) => e);
+    const err = await transport.request('GET', '/bank-transactions').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ValidationError);
     expect((err as ValidationError).detail).toBe('limit too large');
   });
@@ -168,7 +170,9 @@ describe('Transport error mapping', () => {
   it('maps a network failure to ConnectionError with the cause', async () => {
     const boom = new TypeError('fetch failed');
     const { transport } = make([boom], { maxRetries: 0 });
-    const err = await transport.request('GET', '/banking/summary').catch((e: unknown) => e);
+    const err = await transport
+      .request('GET', '/bank-transactions/summary')
+      .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ConnectionError);
     expect((err as ConnectionError).status).toBe(0);
     expect((err as ConnectionError).cause).toBe(boom);
@@ -181,20 +185,22 @@ describe('Transport retry policy', () => {
       jsonResponse({}, { status: 500 }),
       jsonResponse({ count: 1 }),
     ]);
-    await expect(transport.request('GET', '/banking/summary')).resolves.toEqual({ count: 1 });
+    await expect(transport.request('GET', '/bank-transactions/summary')).resolves.toEqual({
+      count: 1,
+    });
     expect(stub.calls).toHaveLength(2);
     expect(sleep).toHaveBeenCalledTimes(1);
   });
 
   it('retries a GET on 429', async () => {
     const { transport, stub } = make([jsonResponse({}, { status: 429 }), jsonResponse({ ok: 1 })]);
-    await transport.request('GET', '/banking/summary');
+    await transport.request('GET', '/bank-transactions/summary');
     expect(stub.calls).toHaveLength(2);
   });
 
   it('retries a GET on a network error', async () => {
     const { transport, stub } = make([new TypeError('fetch failed'), jsonResponse({ ok: 1 })]);
-    await transport.request('GET', '/banking/summary');
+    await transport.request('GET', '/bank-transactions/summary');
     expect(stub.calls).toHaveLength(2);
   });
 
@@ -204,20 +210,22 @@ describe('Transport retry policy', () => {
       jsonResponse({}, { status: 503 }),
       jsonResponse({ title: 'Service Unavailable', detail: 'down' }, { status: 503 }),
     ]);
-    const err = await transport.request('GET', '/banking/summary').catch((e: unknown) => e);
+    const err = await transport
+      .request('GET', '/bank-transactions/summary')
+      .catch((e: unknown) => e);
     expect((err as BankApiError).status).toBe(503);
     expect(stub.calls).toHaveLength(3);
   });
 
   it('never retries a mutation', async () => {
     const { transport, stub } = make([jsonResponse({}, { status: 500 })]);
-    await transport.request('POST', '/webhooks').catch(() => undefined);
+    await transport.request('POST', '/connectors').catch(() => undefined);
     expect(stub.calls).toHaveLength(1);
   });
 
   it('never retries a 4xx other than 429', async () => {
     const { transport, stub } = make([jsonResponse({}, { status: 404 })]);
-    await transport.request('GET', '/webhooks/wh_1').catch(() => undefined);
+    await transport.request('GET', '/connectors/cnr_1').catch(() => undefined);
     expect(stub.calls).toHaveLength(1);
   });
 
@@ -228,7 +236,9 @@ describe('Transport retry policy', () => {
         maxRetries: 0,
       },
     );
-    const err = await transport.request('GET', '/banking/summary').catch((e: unknown) => e);
+    const err = await transport
+      .request('GET', '/bank-transactions/summary')
+      .catch((e: unknown) => e);
     expect((err as RateLimitError).retryAfter).toBe(9);
   });
 
@@ -237,7 +247,7 @@ describe('Transport retry policy', () => {
       jsonResponse({}, { status: 429, headers: { 'retry-after': '3' } }),
       jsonResponse({ ok: 1 }),
     ]);
-    await transport.request('GET', '/banking/summary');
+    await transport.request('GET', '/bank-transactions/summary');
     expect(sleep).toHaveBeenCalledWith(3000);
   });
 
@@ -246,7 +256,7 @@ describe('Transport retry policy', () => {
       jsonResponse({}, { status: 429, headers: { 'retry-after': '999' } }),
       jsonResponse({ ok: 1 }),
     ]);
-    await transport.request('GET', '/banking/summary');
+    await transport.request('GET', '/bank-transactions/summary');
     expect(sleep).toHaveBeenCalledWith(60_000);
   });
 
@@ -258,7 +268,7 @@ describe('Transport retry policy', () => {
       ),
       jsonResponse({ ok: 1 }),
     ]);
-    await transport.request('GET', '/banking/summary');
+    await transport.request('GET', '/bank-transactions/summary');
     const delay = sleep.mock.calls[0]![0] as number;
     expect(delay).toBeGreaterThanOrEqual(200);
     expect(delay).toBeLessThanOrEqual(300);
@@ -270,7 +280,7 @@ describe('Transport retry policy', () => {
       jsonResponse({}, { status: 500 }),
       jsonResponse({ ok: 1 }),
     ]);
-    await transport.request('GET', '/banking/summary');
+    await transport.request('GET', '/bank-transactions/summary');
     const [first, second] = sleep.mock.calls.map((c) => c[0] as number);
     expect(first).toBeGreaterThanOrEqual(200);
     expect(first).toBeLessThanOrEqual(300);
@@ -293,7 +303,7 @@ describe('Transport timeout', () => {
       fetch: spy,
       timeoutMs: 25,
     });
-    await transport.request('GET', '/banking/summary');
+    await transport.request('GET', '/bank-transactions/summary');
     expect(seen).toBeInstanceOf(AbortSignal);
   });
 });

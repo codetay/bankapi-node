@@ -3,7 +3,7 @@ import { ERROR_CODES, type ErrorCode } from './error-codes.js';
 /** Extra context threaded through every BankApiError subclass constructor. */
 export interface BankApiErrorOptions {
   cause?: unknown;
-  /** problem.type with the urn:bankapi:error: prefix stripped; undefined for any other prefix. */
+  /** problem.code, else problem.type with the urn:bankapi:error: prefix stripped; undefined for any other prefix. */
   code?: string;
   /** From the Idempotent-Replayed response header. */
   replayed?: boolean;
@@ -102,8 +102,12 @@ export function isErrorCode(code: string | undefined): code is ErrorCode {
 
 const ERROR_CODE_PREFIX = 'urn:bankapi:error:';
 
-/** Strips the registry prefix off problem.type; undefined for any other prefix or shape. */
+/**
+ * problem.code when it is a non-empty string; otherwise problem.type with the
+ * registry prefix stripped, and undefined for any other prefix or shape.
+ */
 function errorCode(problem: Record<string, unknown>): string | undefined {
+  if (typeof problem.code === 'string' && problem.code !== '') return problem.code;
   const type = typeof problem.type === 'string' ? problem.type : undefined;
   return type?.startsWith(ERROR_CODE_PREFIX) ? type.slice(ERROR_CODE_PREFIX.length) : undefined;
 }

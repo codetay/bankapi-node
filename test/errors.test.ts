@@ -89,6 +89,32 @@ describe('error.code from problem.type', () => {
     expect(err.code).toBeUndefined();
   });
 
+  it('reads problem.code before the type prefix', () => {
+    const err = errorFromResponse(
+      422,
+      {
+        ...problem,
+        code: 'banking.intent_code_reserved',
+        type: 'urn:bankapi:error:other.code',
+        status: 422,
+      },
+      new Headers(),
+    );
+    expect(err).toBeInstanceOf(ValidationError);
+    expect(err.code).toBe('banking.intent_code_reserved');
+  });
+
+  it('falls back to the type prefix when code is absent', () => {
+    for (const code of [undefined, '', 42]) {
+      const err = errorFromResponse(
+        422,
+        { ...problem, code, type: 'urn:bankapi:error:idempotency.key_reused' },
+        new Headers(),
+      );
+      expect(err.code).toBe('idempotency.key_reused');
+    }
+  });
+
   it('leaves code undefined when type is absent', () => {
     const err = errorFromResponse(400, problem, new Headers());
     expect(err.code).toBeUndefined();

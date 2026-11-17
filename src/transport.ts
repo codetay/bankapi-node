@@ -9,7 +9,7 @@ import { VERSION } from './version.js';
 export type QueryValue = string | number | undefined;
 
 /** Every path the transport builds is joined under this API version prefix. */
-export const API_VERSION_PATH = '/v1';
+export const API_VERSION_PATH = '/v2';
 
 const MAX_RETRY_AFTER_MS = 60_000;
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;

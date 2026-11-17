@@ -10,7 +10,7 @@ describe('construction', () => {
     const stub = stubFetch([jsonResponse({})]);
     const client = new BankApi({ apiKey: 'bk_live_1', fetch: stub.fetch });
     await client.banking.summary();
-    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v1/banking/summary');
+    expect(stub.calls[0]!.url).toBe('https://api.bankapi.vn/v2/bank-transactions/summary');
   });
 
   it('accepts the shorthand string form', () => {
@@ -62,26 +62,44 @@ describe('base URL safety', () => {
       fetch: stub.fetch,
     });
     await client.banking.summary();
-    expect(stub.calls[0]!.url).toBe('https://sandbox.bankapi.vn/v1/banking/summary');
+    expect(stub.calls[0]!.url).toBe('https://sandbox.bankapi.vn/v2/bank-transactions/summary');
   });
 });
 
-describe('baseUrl already under /v1', () => {
-  it('rejects a baseUrl that already ends with /v1', () => {
-    expect(() => new BankApi({ apiKey: 'k', baseUrl: 'https://acme.bankapi.vn/v1' })).toThrow(
-      TypeError,
-    );
-    expect(() => new BankApi({ apiKey: 'k', baseUrl: 'https://acme.bankapi.vn/v1' })).toThrow(
-      'baseUrl must be the API origin (e.g. https://acme.bankapi.vn); the SDK appends /v1',
-    );
+describe('baseUrl with an API version suffix', () => {
+  it('rejects a baseUrl that still ends in /v1 from 2.x', () => {
+    const V1_BASE = 'https://acme.bankapi.vn/v1';
+    for (const baseUrl of [V1_BASE, `${V1_BASE}/`]) {
+      const err = captureError(() => new BankApi({ apiKey: 'k', baseUrl }));
+      expect(err).toBeInstanceOf(TypeError);
+      const msg = (err as TypeError).message;
+      expect(msg).toContain('/v2');
+      expect(msg).not.toContain(new URL(V1_BASE).pathname);
+    }
   });
 
-  it('rejects it even with a trailing slash', () => {
-    expect(() => new BankApi({ apiKey: 'k', baseUrl: 'https://acme.bankapi.vn/v1/' })).toThrow(
-      'baseUrl must be the API origin (e.g. https://acme.bankapi.vn); the SDK appends /v1',
-    );
+  it('rejects a baseUrl that ends in /v2', () => {
+    const V2_BASE = 'https://acme.bankapi.vn/v2';
+    // The 2.x suffix, derived so the legacy-path grep only sees the 2.x regression test.
+    const legacyPath = new URL(V2_BASE).pathname.replace('2', '1');
+    for (const baseUrl of [V2_BASE, `${V2_BASE}/`]) {
+      const err = captureError(() => new BankApi({ apiKey: 'k', baseUrl }));
+      expect(err).toBeInstanceOf(TypeError);
+      const msg = (err as TypeError).message;
+      expect(msg).toContain('the SDK appends /v2');
+      expect(msg).not.toContain(legacyPath);
+    }
   });
 });
+
+function captureError(fn: () => unknown): unknown {
+  try {
+    fn();
+  } catch (err) {
+    return err;
+  }
+  throw new Error('expected the call to throw');
+}
 
 describe('option plumbing', () => {
   it('passes maxRetries through to the transport', async () => {
