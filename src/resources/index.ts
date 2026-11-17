@@ -10,50 +10,54 @@ import {
   strList,
 } from './coerce.js';
 
-/** One row of GET /banking/transactions (schema BankTransactionItem). */
+/**
+ * GET /v2/bank-transactions item, GET /v2/bank-transactions/{id} and the match
+ * result: v2 has one schema, BankTransaction, for all three.
+ */
 export interface Transaction {
   id: string;
-  amount: number;
+  /** Whole VND. Above 2^53 the JSON number is already rounded by JSON.parse. */
+  amountVnd: number;
   direction: string;
+  bankCode: string;
   bankRef: string;
+  /** The full account number; mask it yourself before display. */
+  accountNumber: string;
+  vaNumber: string | null;
   connectionId: string;
   description: string;
-  matchStatus: string;
-  matchedIntentId: string;
+  matchStatus: string | null;
+  matchedIntentId: string | null;
+  matchedAt: string | null;
+  matchReviewReason: string | null;
   transactionDate: string;
+  lastSeenAt: string;
+  redeliveryCount: number;
   createdAt: string;
 }
+
+/** Kept for 2.x callers: list, detail and match share one shape in v2. */
+export type TransactionDetail = Transaction;
 
 export function toTransaction(raw: Record<string, unknown>): Transaction {
   return {
     id: str(raw.id),
-    amount: num(raw.amount),
+    amountVnd: num(raw.amount_vnd),
     direction: str(raw.direction),
+    bankCode: str(raw.bank_code),
     bankRef: str(raw.bank_ref),
+    accountNumber: str(raw.account_number),
+    vaNumber: optStr(raw.va_number),
     connectionId: str(raw.connection_id),
     description: str(raw.description),
-    matchStatus: str(raw.match_status),
-    matchedIntentId: str(raw.matched_intent_id),
+    matchStatus: optStr(raw.match_status),
+    matchedIntentId: optStr(raw.matched_intent_id),
+    matchedAt: optStr(raw.matched_at),
+    matchReviewReason: optStr(raw.match_review_reason),
     transactionDate: str(raw.transaction_date),
-    createdAt: str(raw.created_at),
-  };
-}
-
-/** GET /banking/transactions/{txId} (schema TransactionDetail). */
-export interface TransactionDetail extends Transaction {
-  matchReviewReason: string;
-  accountNumberMasked: string;
-  lastSeenAt: string;
-  redeliveryCount: number;
-}
-
-export function toTransactionDetail(raw: Record<string, unknown>): TransactionDetail {
-  return {
-    ...toTransaction(raw),
-    matchReviewReason: str(raw.match_review_reason),
-    accountNumberMasked: str(raw.account_number_masked),
     lastSeenAt: str(raw.last_seen_at),
     redeliveryCount: num(raw.redelivery_count),
+    createdAt: str(raw.created_at),
   };
 }
 
@@ -62,19 +66,23 @@ export interface ConnectionCapabilities {
   supportsDebit: boolean;
 }
 
-/** GET /banking/connections item (schema BankConnectionItem). */
+/** GET /v2/bank-connections item and GET /v2/bank-connections/{id} (schema BankConnection). */
 export interface Connection {
   id: string;
   bankCode: string;
   label: string;
   status: string;
-  accountType: string;
+  accountType: string | null;
   accountNumber: string | null;
   accountNumberMasked: string | null;
-  balance: number | null;
+  bin: string | null;
+  vaPrefix: string | null;
+  oauthState: string;
   capabilities: ConnectionCapabilities;
+  /** Raw snake_case records, like the nested summary aggregates. */
+  virtualAccounts: Record<string, unknown>[];
   createdAt: string;
-  verifiedAt: string;
+  verifiedAt: string | null;
 }
 
 export function toConnection(raw: Record<string, unknown>): Connection {
@@ -84,28 +92,31 @@ export function toConnection(raw: Record<string, unknown>): Connection {
     bankCode: str(raw.bank_code),
     label: str(raw.label),
     status: str(raw.status),
-    accountType: str(raw.account_type),
+    accountType: optStr(raw.account_type),
     accountNumber: optStr(raw.account_number),
     accountNumberMasked: optStr(raw.account_number_masked),
-    balance: optNum(raw.balance),
+    bin: optStr(raw.bin),
+    vaPrefix: optStr(raw.va_prefix),
+    oauthState: str(raw.oauth_state),
     capabilities: {
       supportsBalance: bool(capabilities.supports_balance),
       supportsDebit: bool(capabilities.supports_debit),
     },
+    virtualAccounts: recordList(raw.virtual_accounts),
     createdAt: str(raw.created_at),
-    verifiedAt: str(raw.verified_at),
+    verifiedAt: optStr(raw.verified_at),
   };
 }
 
 /**
- * GET /banking/summary (schema TxSummaryOutputBody).
- * ponytail: nested aggregates stay raw; add typed shapes if devs ask.
+ * GET /v2/bank-transactions/summary (schema TransactionSummary).
+ * ponytail: nested aggregates stay raw (their keys are *_vnd snake_case); add typed shapes if devs ask.
  */
 export interface BankingSummary {
   count: number;
-  creditTotal: number;
-  creditMatchedTotal: number;
-  debitTotal: number;
+  creditTotalVnd: number;
+  creditMatchedTotalVnd: number;
+  debitTotalVnd: number;
   from: string;
   to: string;
   matchCounts: Record<string, number>;
@@ -117,9 +128,9 @@ export interface BankingSummary {
 export function toBankingSummary(raw: Record<string, unknown>): BankingSummary {
   return {
     count: num(raw.count),
-    creditTotal: num(raw.credit_total),
-    creditMatchedTotal: num(raw.credit_matched_total),
-    debitTotal: num(raw.debit_total),
+    creditTotalVnd: num(raw.credit_total_vnd),
+    creditMatchedTotalVnd: num(raw.credit_matched_total_vnd),
+    debitTotalVnd: num(raw.debit_total_vnd),
     from: str(raw.from),
     to: str(raw.to),
     matchCounts: numRecord(raw.match_counts),
@@ -129,7 +140,7 @@ export function toBankingSummary(raw: Record<string, unknown>): BankingSummary {
   };
 }
 
-/** GET /banking/connections/summary (schema ConnSummaryOutputBody). */
+/** GET /v2/bank-connections/summary (schema ConnectionSummary). */
 export interface ConnectionsSummary {
   from: string;
   to: string;
@@ -144,24 +155,28 @@ export function toConnectionsSummary(raw: Record<string, unknown>): ConnectionsS
   };
 }
 
-/** GET /banking/payment-intents item (schema IntentResponse). */
+/** GET /v2/payment-intents item, and the create and get results (schema PaymentIntent). */
 export interface PaymentIntent {
   id: string;
   code: string;
-  expectedAmount: number;
+  expectedAmountVnd: number;
   status: string;
-  matchedTransactionId: string;
+  matchedTransactionId: string | null;
+  matchedAt: string | null;
   expiresAt: string;
+  createdAt: string;
 }
 
 export function toPaymentIntent(raw: Record<string, unknown>): PaymentIntent {
   return {
     id: str(raw.id),
     code: str(raw.code),
-    expectedAmount: num(raw.expected_amount),
+    expectedAmountVnd: num(raw.expected_amount_vnd),
     status: str(raw.status),
-    matchedTransactionId: str(raw.matched_transaction_id),
+    matchedTransactionId: optStr(raw.matched_transaction_id),
+    matchedAt: optStr(raw.matched_at),
     expiresAt: str(raw.expires_at),
+    createdAt: str(raw.created_at),
   };
 }
 

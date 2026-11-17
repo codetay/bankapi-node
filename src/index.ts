@@ -28,6 +28,7 @@ export {
 } from './errors.js';
 export { BankingService } from './services/banking.js';
 export type {
+  ConnectionListOptions,
   CreatePaymentIntentOptions,
   CreatePaymentIntentInput,
   PaymentIntentListOptions,

@@ -5,19 +5,23 @@ import {
   type ConnectionsSummary,
   type PaymentIntent,
   type Transaction,
-  type TransactionDetail,
   toBankingSummary,
   toConnection,
   toConnectionsSummary,
   toPaymentIntent,
   toTransaction,
-  toTransactionDetail,
 } from '../resources/index.js';
 import type { QueryValue, Transport } from '../transport.js';
 import { items, nextCursor } from './list.js';
 
 export interface SummaryOptions {
   days?: number;
+}
+
+export interface ConnectionListOptions {
+  limit?: number;
+  cursor?: string;
+  q?: string;
 }
 
 export interface TransactionListOptions {
@@ -39,7 +43,8 @@ export interface PaymentIntentListOptions {
 
 export interface CreatePaymentIntentInput {
   code: string;
-  expectedAmount: number;
+  /** Whole VND. */
+  expectedAmountVnd: number;
   /** Intent TTL in seconds; omit for the server default. */
   expiresInSecs?: number;
 }
@@ -54,25 +59,31 @@ export class BankingService {
 
   async summary(options: SummaryOptions = {}): Promise<BankingSummary> {
     return toBankingSummary(
-      await this.transport.request('GET', '/banking/summary', { days: options.days }),
+      await this.transport.request('GET', '/bank-transactions/summary', { days: options.days }),
     );
   }
 
-  /** GET /banking/connections is a plain list, not a cursor page. */
-  async connections(): Promise<Connection[]> {
-    const data = await this.transport.request('GET', '/banking/connections');
-    return items(data).map(toConnection);
+  async connections(options: ConnectionListOptions = {}): Promise<Page<Connection>> {
+    const data = await this.transport.request('GET', '/bank-connections', {
+      limit: options.limit,
+      cursor: options.cursor,
+      q: options.q,
+    });
+
+    return new Page(items(data).map(toConnection), nextCursor(data), (cursor) =>
+      this.connections({ ...options, cursor }),
+    );
   }
 
   async connectionsSummary(options: SummaryOptions = {}): Promise<ConnectionsSummary> {
     return toConnectionsSummary(
-      await this.transport.request('GET', '/banking/connections/summary', { days: options.days }),
+      await this.transport.request('GET', '/bank-connections/summary', { days: options.days }),
     );
   }
 
   async connection(connId: string): Promise<Connection> {
     return toConnection(
-      await this.transport.request('GET', `/banking/connections/${encodeURIComponent(connId)}`),
+      await this.transport.request('GET', `/bank-connections/${encodeURIComponent(connId)}`),
     );
   }
 
@@ -87,24 +98,24 @@ export class BankingService {
       match_status: options.matchStatus,
       cursor: options.cursor,
     };
-    const data = await this.transport.request('GET', '/banking/transactions', query);
+    const data = await this.transport.request('GET', '/bank-transactions', query);
 
     return new Page(items(data).map(toTransaction), nextCursor(data), (cursor) =>
       this.transactions({ ...options, cursor }),
     );
   }
 
-  async transaction(txId: string): Promise<TransactionDetail> {
-    return toTransactionDetail(
-      await this.transport.request('GET', `/banking/transactions/${encodeURIComponent(txId)}`),
+  async transaction(txId: string): Promise<Transaction> {
+    return toTransaction(
+      await this.transport.request('GET', `/bank-transactions/${encodeURIComponent(txId)}`),
     );
   }
 
-  async matchTransaction(txId: string, intentId: string): Promise<TransactionDetail> {
-    return toTransactionDetail(
+  async matchTransaction(txId: string, intentId: string): Promise<Transaction> {
+    return toTransaction(
       await this.transport.request(
         'POST',
-        `/banking/transactions/${encodeURIComponent(txId)}/match`,
+        `/bank-transactions/${encodeURIComponent(txId)}/match`,
         {},
         { intent_id: intentId },
       ),
@@ -112,7 +123,7 @@ export class BankingService {
   }
 
   async paymentIntents(options: PaymentIntentListOptions = {}): Promise<Page<PaymentIntent>> {
-    const data = await this.transport.request('GET', '/banking/payment-intents', {
+    const data = await this.transport.request('GET', '/payment-intents', {
       status: options.status,
       limit: options.limit,
       cursor: options.cursor,
@@ -130,12 +141,12 @@ export class BankingService {
   ): Promise<PaymentIntent> {
     const body: Record<string, unknown> = {
       code: input.code,
-      expected_amount: input.expectedAmount,
+      expected_amount_vnd: input.expectedAmountVnd,
     };
     if (input.expiresInSecs !== undefined) body.expires_in_secs = input.expiresInSecs;
 
     return toPaymentIntent(
-      await this.transport.request('POST', '/banking/payment-intents', {}, body, {
+      await this.transport.request('POST', '/payment-intents', {}, body, {
         idempotencyKey: options.idempotencyKey ?? crypto.randomUUID(),
       }),
     );
@@ -143,10 +154,7 @@ export class BankingService {
 
   async paymentIntent(intentId: string): Promise<PaymentIntent> {
     return toPaymentIntent(
-      await this.transport.request(
-        'GET',
-        `/banking/payment-intents/${encodeURIComponent(intentId)}`,
-      ),
+      await this.transport.request('GET', `/payment-intents/${encodeURIComponent(intentId)}`),
     );
   }
 }

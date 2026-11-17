@@ -8,115 +8,191 @@ import {
   toDelivery,
   toPaymentIntent,
   toTransaction,
-  toTransactionDetail,
   toWebhookEndpoint,
 } from '../src/resources/index.js';
 
 describe('mappers are forward compatible', () => {
   it('ignores unknown fields instead of throwing', () => {
-    const tx = toTransaction({ id: 'tx_1', amount: 1000, brand_new_field: 'whatever' });
+    const tx = toTransaction({ id: 'tx_1', amount_vnd: 1000, brand_new_field: 'whatever' });
     expect(tx.id).toBe('tx_1');
-    expect(tx.amount).toBe(1000);
+    expect(tx.amountVnd).toBe(1000);
     expect('brand_new_field' in tx).toBe(false);
   });
 
   it('fills defaults when fields are missing', () => {
     expect(toTransaction({})).toEqual({
       id: '',
-      amount: 0,
+      amountVnd: 0,
       direction: '',
+      bankCode: '',
       bankRef: '',
+      accountNumber: '',
+      vaNumber: null,
       connectionId: '',
       description: '',
-      matchStatus: '',
-      matchedIntentId: '',
+      matchStatus: null,
+      matchedIntentId: null,
+      matchedAt: null,
+      matchReviewReason: null,
       transactionDate: '',
+      lastSeenAt: '',
+      redeliveryCount: 0,
       createdAt: '',
     });
   });
 });
 
-describe('toTransactionDetail', () => {
-  it('maps every documented field', () => {
+describe('toTransaction', () => {
+  it('toTransaction maps every BankTransaction field', () => {
     expect(
-      toTransactionDetail({
-        id: 'tx_1',
-        amount: 150000,
+      toTransaction({
+        id: 'btx_1',
+        amount_vnd: 50000,
         direction: 'credit',
+        bank_code: 'MB',
         bank_ref: 'FT123',
-        connection_id: 'conn_1',
+        account_number: '0123456789',
+        va_number: 'VA0042',
+        connection_id: 'bcn_1',
         description: 'thanh toan',
         match_status: 'matched',
-        matched_intent_id: 'pi_1',
+        matched_intent_id: 'bpi_1',
+        matched_at: '2026-11-17T00:02:00Z',
         match_review_reason: 'amount',
-        account_number_masked: '9704xx',
-        transaction_date: '2026-08-27',
-        created_at: '2026-08-27T00:00:00Z',
-        last_seen_at: '2026-08-27T00:01:00Z',
+        transaction_date: '2026-11-17',
+        last_seen_at: '2026-11-17T00:01:00Z',
         redelivery_count: 2,
+        created_at: '2026-11-17T00:00:00Z',
       }),
     ).toEqual({
-      id: 'tx_1',
-      amount: 150000,
+      id: 'btx_1',
+      amountVnd: 50000,
       direction: 'credit',
+      bankCode: 'MB',
       bankRef: 'FT123',
-      connectionId: 'conn_1',
+      accountNumber: '0123456789',
+      vaNumber: 'VA0042',
+      connectionId: 'bcn_1',
       description: 'thanh toan',
       matchStatus: 'matched',
-      matchedIntentId: 'pi_1',
+      matchedIntentId: 'bpi_1',
+      matchedAt: '2026-11-17T00:02:00Z',
       matchReviewReason: 'amount',
-      accountNumberMasked: '9704xx',
-      transactionDate: '2026-08-27',
-      createdAt: '2026-08-27T00:00:00Z',
-      lastSeenAt: '2026-08-27T00:01:00Z',
+      transactionDate: '2026-11-17',
+      lastSeenAt: '2026-11-17T00:01:00Z',
       redeliveryCount: 2,
+      createdAt: '2026-11-17T00:00:00Z',
     });
+  });
+
+  it('toTransaction maps absent nullable fields to null', () => {
+    const absent = toTransaction({ id: 'btx_1', amount_vnd: 1 });
+    const nulled = toTransaction({
+      id: 'btx_1',
+      amount_vnd: 1,
+      match_status: null,
+      matched_intent_id: null,
+      matched_at: null,
+      match_review_reason: null,
+      va_number: null,
+    });
+    for (const tx of [absent, nulled]) {
+      expect(tx.matchStatus).toBeNull();
+      expect(tx.matchedIntentId).toBeNull();
+      expect(tx.matchedAt).toBeNull();
+      expect(tx.matchReviewReason).toBeNull();
+      expect(tx.vaNumber).toBeNull();
+    }
+  });
+
+  it('reads only amount_vnd, never the 2.x amount key', () => {
+    expect(toTransaction({ amount: 50000 }).amountVnd).toBe(0);
   });
 });
 
 describe('toConnection', () => {
   it('maps nullable fields to null when absent', () => {
-    const conn = toConnection({ id: 'conn_1', bank_code: 'ocb' });
+    const conn = toConnection({ id: 'bcn_1', bank_code: 'MB' });
+    expect(conn.accountType).toBeNull();
     expect(conn.accountNumber).toBeNull();
     expect(conn.accountNumberMasked).toBeNull();
-    expect(conn.balance).toBeNull();
+    expect(conn.bin).toBeNull();
+    expect(conn.vaPrefix).toBeNull();
+    expect(conn.verifiedAt).toBeNull();
+    expect(conn.virtualAccounts).toEqual([]);
     expect(conn.capabilities).toEqual({ supportsBalance: false, supportsDebit: false });
   });
 
   it('maps capabilities out of snake_case', () => {
     const conn = toConnection({
-      id: 'conn_1',
+      id: 'bcn_1',
       capabilities: { supports_balance: true, supports_debit: false },
     });
     expect(conn.capabilities).toEqual({ supportsBalance: true, supportsDebit: false });
   });
 
-  it('keeps present nullable values', () => {
-    const conn = toConnection({ account_number: '0123', balance: 5000 });
-    expect(conn.accountNumber).toBe('0123');
-    expect(conn.balance).toBe(5000);
+  it('toConnection has no balance and keeps the masked account number', () => {
+    const conn = toConnection({
+      id: 'bcn_1',
+      account_number: '0123456789',
+      account_number_masked: '******6789',
+      balance: 5000,
+    });
+    expect('balance' in conn).toBe(false);
+    expect(conn.accountNumber).toBe('0123456789');
+    expect(conn.accountNumberMasked).toBe('******6789');
+  });
+
+  it('toConnection maps bin, va_prefix, oauth_state and virtual_accounts', () => {
+    const conn = toConnection({
+      id: 'bcn_1',
+      account_type: 'business',
+      bin: '970422',
+      va_prefix: 'XX',
+      oauth_state: 'connected',
+      virtual_accounts: [{ va_number: 'XX0001', label: 'shop' }],
+      verified_at: '2026-11-17T00:00:00Z',
+      active_otp_session: { id: 'otp_1' },
+    });
+    expect(conn.accountType).toBe('business');
+    expect(conn.bin).toBe('970422');
+    expect(conn.vaPrefix).toBe('XX');
+    expect(conn.oauthState).toBe('connected');
+    expect(conn.virtualAccounts).toEqual([{ va_number: 'XX0001', label: 'shop' }]);
+    expect(conn.verifiedAt).toBe('2026-11-17T00:00:00Z');
+    expect('activeOtpSession' in conn).toBe(false);
   });
 });
 
 describe('toBankingSummary', () => {
-  it('maps scalars and keeps nested aggregates raw', () => {
+  it('toBankingSummary reads the *_vnd totals', () => {
     const summary = toBankingSummary({
       count: 4,
-      credit_total: 900,
-      credit_matched_total: 400,
-      debit_total: 100,
-      from: '2026-08-01',
-      to: '2026-08-27',
+      credit_total_vnd: 7,
+      credit_matched_total_vnd: 4,
+      debit_total_vnd: 1,
+      from: '2026-11-01',
+      to: '2026-11-17',
       match_counts: { matched: 3, unmatched: 1 },
-      prev: { count: 2 },
-      days: [{ day: '2026-08-27', credit_total: 900 }],
-      connections: [{ id: 'conn_1' }],
+      prev: { count: 2, credit_total_vnd: 5 },
+      days: [{ date: '2026-11-17', credit_total_vnd: 7 }],
+      connections: [{ id: 'bcn_1' }],
     });
     expect(summary.count).toBe(4);
-    expect(summary.creditMatchedTotal).toBe(400);
+    expect(summary.creditTotalVnd).toBe(7);
+    expect(summary.creditMatchedTotalVnd).toBe(4);
+    expect(summary.debitTotalVnd).toBe(1);
     expect(summary.matchCounts).toEqual({ matched: 3, unmatched: 1 });
-    expect(summary.days).toEqual([{ day: '2026-08-27', credit_total: 900 }]);
-    expect(summary.connections).toEqual([{ id: 'conn_1' }]);
+    expect(summary.prev).toEqual({ count: 2, credit_total_vnd: 5 });
+    expect(summary.days).toEqual([{ date: '2026-11-17', credit_total_vnd: 7 }]);
+    expect(summary.connections).toEqual([{ id: 'bcn_1' }]);
+  });
+
+  it('reads only the *_vnd totals, never the 2.x keys', () => {
+    const summary = toBankingSummary({ credit_total: 9, credit_matched_total: 9, debit_total: 9 });
+    expect(summary.creditTotalVnd).toBe(0);
+    expect(summary.creditMatchedTotalVnd).toBe(0);
+    expect(summary.debitTotalVnd).toBe(0);
   });
 
   it('defaults nested aggregates to empty containers', () => {
@@ -131,37 +207,48 @@ describe('toBankingSummary', () => {
 describe('toConnectionsSummary', () => {
   it('maps the window and keeps connections raw', () => {
     const summary = toConnectionsSummary({
-      from: '2026-08-01',
-      to: '2026-08-27',
-      connections: [{ id: 'conn_1' }],
+      from: '2026-11-01',
+      to: '2026-11-17',
+      connections: [{ id: 'bcn_1', today_credit_vnd: 3 }],
     });
     expect(summary).toEqual({
-      from: '2026-08-01',
-      to: '2026-08-27',
-      connections: [{ id: 'conn_1' }],
+      from: '2026-11-01',
+      to: '2026-11-17',
+      connections: [{ id: 'bcn_1', today_credit_vnd: 3 }],
     });
   });
 });
 
 describe('toPaymentIntent', () => {
-  it('maps every documented field', () => {
+  it('toPaymentIntent maps expected_amount_vnd, created_at and matched_at', () => {
     expect(
       toPaymentIntent({
-        id: 'pi_1',
+        id: 'bpi_1',
         code: 'PN-42',
-        expected_amount: 99000,
-        status: 'pending',
-        matched_transaction_id: '',
-        expires_at: '2026-08-28T00:00:00Z',
+        expected_amount_vnd: 99000,
+        status: 'matched',
+        matched_transaction_id: 'btx_1',
+        matched_at: '2026-11-17T00:05:00Z',
+        expires_at: '2026-11-18T00:00:00Z',
+        created_at: '2026-11-17T00:00:00Z',
       }),
     ).toEqual({
-      id: 'pi_1',
+      id: 'bpi_1',
       code: 'PN-42',
-      expectedAmount: 99000,
-      status: 'pending',
-      matchedTransactionId: '',
-      expiresAt: '2026-08-28T00:00:00Z',
+      expectedAmountVnd: 99000,
+      status: 'matched',
+      matchedTransactionId: 'btx_1',
+      matchedAt: '2026-11-17T00:05:00Z',
+      expiresAt: '2026-11-18T00:00:00Z',
+      createdAt: '2026-11-17T00:00:00Z',
     });
+  });
+
+  it('maps an unmatched intent to null match fields and ignores the 2.x amount key', () => {
+    const intent = toPaymentIntent({ id: 'bpi_1', expected_amount: 99000 });
+    expect(intent.expectedAmountVnd).toBe(0);
+    expect(intent.matchedTransactionId).toBeNull();
+    expect(intent.matchedAt).toBeNull();
   });
 });
 
