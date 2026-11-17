@@ -22,7 +22,8 @@ function run(script: string, dir: string, args: string[] = []) {
   const path = fileURLToPath(new URL(`../scripts/${script}`, import.meta.url));
   const result = spawnSync(process.execPath, [path, ...args], {
     encoding: 'utf8',
-    env: { ...process.env, APIRS_DIR: dir, KITRS_DIR: dir },
+    // The ceiling keeps git from finding a checkout above a TMPDIR that lives inside one.
+    env: { ...process.env, APIRS_DIR: dir, KITRS_DIR: dir, GIT_CEILING_DIRECTORIES: scratch },
   });
   return { status: result.status, stderr: result.stderr };
 }
