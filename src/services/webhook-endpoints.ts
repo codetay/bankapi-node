@@ -58,11 +58,12 @@ export class WebhookEndpointService {
     await this.transport.request('DELETE', `/connectors/${encodeURIComponent(id)}`);
   }
 
-  /** Switching on also ends a pause and starts the failure count again. */
+  /** Switching on or off ends a pause and starts the failure count again. */
   async enable(id: string): Promise<void> {
     await this.setActive(id, true);
   }
 
+  /** Switching on or off ends a pause and starts the failure count again. */
   async disable(id: string): Promise<void> {
     await this.setActive(id, false);
   }
