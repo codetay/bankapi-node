@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// Pins test/fixtures/openapi.json to a specific GO-KIT ref: copies
-// api/openapi.json out of the GO-KIT git history (so the fixture is exactly
-// what was committed at that ref, not whatever happens to be on disk) and
-// records the ref + fixture hash in test/fixtures/openapi.lock.json.
+// Pins the contract fixtures to specific API-RS and KIT-RS commits: copies
+// api/openapi.json out of the API-RS git history and the v2 webhook vectors
+// out of the KIT-RS git history (so each fixture is exactly what was
+// committed at that ref, not whatever happens to be on disk) and records
+// both commits + fixture hashes in test/fixtures/openapi.lock.json.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -15,82 +16,92 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURE_PATH = resolve(ROOT, 'test/fixtures/openapi.json');
 const LOCK_PATH = resolve(ROOT, 'test/fixtures/openapi.lock.json');
 const ERROR_CODES_PATH = resolve(ROOT, 'src/error-codes.ts');
-const VECTORS_PATH = resolve(ROOT, 'test/fixtures/webhook_vectors.json');
+const VECTORS_PATH = resolve(ROOT, 'test/fixtures/webhook_vectors_v2.json');
 const WEBHOOK_EVENTS_PATH = resolve(ROOT, 'src/webhook-events.ts');
-const SPEC_PATH_IN_GOKIT = 'api/openapi.json';
-const VECTORS_PATH_IN_GOKIT =
-  'internal/modules/connector/transport/httpwebhook/testdata/webhook_vectors.json';
+const SPEC_PATH_IN_APIRS = 'api/openapi.json';
+const VECTORS_PATH_IN_KITRS = 'oracle/webhook/webhook_vectors_v2.json';
 // The spec is well under 1 MB today, but a generous cap costs nothing and
 // avoids a cryptic ENOBUFS if it grows.
 const MAX_BUFFER = 64 * 1024 * 1024;
 
 function parseArgs(argv) {
-  let ref;
+  const args = {};
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--ref') ref = argv[++i];
+    if (argv[i] === '--apirs-ref') args.apirsRef = argv[++i];
+    else if (argv[i] === '--kitrs-ref') args.kitrsRef = argv[++i];
   }
-  return { ref };
+  return args;
 }
 
-function resolveGokitDir() {
-  const dir = process.env.GOKIT_DIR ?? resolve(ROOT, '../GO-KIT');
-  return resolve(process.cwd(), dir);
+function repoDir(envName, sibling) {
+  const dir = resolve(process.cwd(), process.env[envName] ?? resolve(ROOT, '..', sibling));
+  if (!existsSync(dir)) {
+    console.error(`${sibling} checkout not found at ${dir}. Set ${envName} to a ${sibling} clone.`);
+    process.exit(2);
+  }
+  return dir;
 }
 
-function readLockRef() {
-  if (!existsSync(LOCK_PATH)) return undefined;
-  return JSON.parse(readFileSync(LOCK_PATH, 'utf8')).gokit_ref;
+function readLock() {
+  return existsSync(LOCK_PATH) ? JSON.parse(readFileSync(LOCK_PATH, 'utf8')) : {};
 }
+
+function git(cwd, args) {
+  return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: MAX_BUFFER });
+}
+
+// `^{commit}` peels an annotated tag to its commit; a bare rev-parse would
+// record the tag object's sha instead.
+function resolveCommit(cwd, ref) {
+  return git(cwd, ['rev-parse', '--verify', `${ref}^{commit}`]).trim();
+}
+
+const sha256 = (text) => createHash('sha256').update(text).digest('hex');
 
 function main() {
-  const { ref: refArg } = parseArgs(process.argv.slice(2));
-  const gokitDir = resolveGokitDir();
+  const args = parseArgs(process.argv.slice(2));
+  const apirsDir = repoDir('APIRS_DIR', 'API-RS');
+  const kitrsDir = repoDir('KITRS_DIR', 'KIT-RS');
+  const lock = readLock();
 
-  if (!existsSync(gokitDir)) {
+  const apirsRefArg = args.apirsRef ?? lock.apirs_ref;
+  const kitrsRefArg = args.kitrsRef ?? lock.kitrs_ref;
+  if (!apirsRefArg || !kitrsRefArg) {
     console.error(
-      `GO-KIT checkout not found at ${gokitDir}. Set GOKIT_DIR to the path of a GO-KIT clone.`,
+      'Give --apirs-ref and --kitrs-ref, or keep test/fixtures/openapi.lock.json to read them from.',
     );
     process.exit(2);
   }
 
-  const ref = refArg ?? readLockRef();
-  if (!ref) {
-    console.error(
-      'No --ref given and no existing test/fixtures/openapi.lock.json to read a ref from.',
-    );
-    process.exit(2);
-  }
-
-  const sha = execFileSync('git', ['rev-parse', '--verify', ref], {
-    cwd: gokitDir,
-    encoding: 'utf8',
-    maxBuffer: MAX_BUFFER,
-  }).trim();
-  const spec = execFileSync('git', ['show', `${sha}:${SPEC_PATH_IN_GOKIT}`], {
-    cwd: gokitDir,
-    encoding: 'utf8',
-    maxBuffer: MAX_BUFFER,
-  });
+  const apirsRef = resolveCommit(apirsDir, apirsRefArg);
+  const kitrsRef = resolveCommit(kitrsDir, kitrsRefArg);
+  const spec = git(apirsDir, ['show', `${apirsRef}:${SPEC_PATH_IN_APIRS}`]);
+  const vectors = git(kitrsDir, ['show', `${kitrsRef}:${VECTORS_PATH_IN_KITRS}`]);
 
   mkdirSync(dirname(FIXTURE_PATH), { recursive: true });
   writeFileSync(FIXTURE_PATH, spec);
-
-  const sha256 = createHash('sha256').update(spec).digest('hex');
-  writeFileSync(LOCK_PATH, `${JSON.stringify({ gokit_ref: sha, sha256 }, null, 2)}\n`);
-
-  writeFileSync(ERROR_CODES_PATH, renderErrorCodes(JSON.parse(spec)));
-
-  const vectors = execFileSync('git', ['show', `${sha}:${VECTORS_PATH_IN_GOKIT}`], {
-    cwd: gokitDir,
-    encoding: 'utf8',
-    maxBuffer: MAX_BUFFER,
-  });
   writeFileSync(VECTORS_PATH, vectors);
-  writeFileSync(WEBHOOK_EVENTS_PATH, renderWebhookEvents(JSON.parse(spec)));
+  writeFileSync(
+    LOCK_PATH,
+    `${JSON.stringify(
+      {
+        apirs_ref: apirsRef,
+        openapi_sha256: sha256(spec),
+        kitrs_ref: kitrsRef,
+        vectors_sha256: sha256(vectors),
+      },
+      null,
+      2,
+    )}\n`,
+  );
 
-  console.log(`Synced test/fixtures/openapi.json from GO-KIT@${sha}`);
-  console.log('Regenerated src/error-codes.ts');
-  console.log('Synced test/fixtures/webhook_vectors.json and regenerated src/webhook-events.ts');
+  const parsed = JSON.parse(spec);
+  writeFileSync(ERROR_CODES_PATH, renderErrorCodes(parsed));
+  writeFileSync(WEBHOOK_EVENTS_PATH, renderWebhookEvents(parsed));
+
+  console.log(`Synced test/fixtures/openapi.json from API-RS@${apirsRef}`);
+  console.log(`Synced test/fixtures/webhook_vectors_v2.json from KIT-RS@${kitrsRef}`);
+  console.log('Regenerated src/error-codes.ts and src/webhook-events.ts');
 }
 
 main();

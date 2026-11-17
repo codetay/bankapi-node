@@ -1,6 +1,6 @@
 // Shared by scripts/sync-spec.mjs and scripts/verify-spec.mjs: renders
 // src/webhook-events.ts from the OpenAPI `webhooks` section, so the SDK's
-// event types are GO-KIT's public event registry at the locked ref.
+// event types are API-RS's public event registry at the locked ref.
 const REF = '#/components/schemas/';
 
 const refName = (ref) => ref.slice(REF.length);
@@ -17,6 +17,14 @@ function tsType(schema, deps) {
   }
   if (schema.enum)
     return schema.enum.map((v) => (typeof v === 'string' ? `'${v}'` : String(v))).join(' | ');
+  // OpenAPI 3.1 nullable: `type: ['string', 'null']` renders as `string | null`.
+  if (Array.isArray(schema.type)) {
+    const rendered = schema.type
+      .filter((t) => t !== 'null')
+      .map((t) => tsType({ ...schema, type: t }, deps))
+      .join(' | ');
+    return schema.type.includes('null') ? `${rendered} | null` : rendered;
+  }
   switch (schema.type) {
     case 'string':
       return 'string';
@@ -50,10 +58,10 @@ export function renderWebhookEvents(spec) {
   const hooks = spec.webhooks ?? {};
   const types = Object.keys(hooks).sort();
   if (types.length === 0) {
-    throw new Error('openapi.json has no webhooks section; sync a GO-KIT ref with envelope v1');
+    throw new Error('openapi.json has no webhooks section; sync an API-RS ref with webhooks');
   }
   const schemas = spec.components.schemas;
-  const deps = new Set(['FlowTrigger']);
+  const deps = new Set(['FlowOutputTrigger']);
   const events = types.map((type) => {
     const post = hooks[type].post;
     const envelope = schemas[refName(post.requestBody.content['application/json'].schema.$ref)];
@@ -91,7 +99,7 @@ interface EnvelopeBase<T extends string> {
   /** Event id: identical for every endpoint and every retry. */
   id: string;
   type: T;
-  api_version: 'v1';
+  api_version: '2';
   /** When the event happened, RFC3339 UTC. */
   created_at: string;
   org_id: string;
@@ -107,7 +115,7 @@ ${events.map((e) => `  | ${e.name}`).join('\n')};
 /** An event type this SDK version does not know yet. Acknowledge it; do not fail. */
 export interface UnknownWebhookEnvelope extends EnvelopeBase<string> {
   data: Record<string, unknown>;
-  trigger?: FlowTrigger;
+  trigger?: FlowOutputTrigger;
 }
 
 export type WebhookEnvelope = KnownWebhookEnvelope | UnknownWebhookEnvelope;

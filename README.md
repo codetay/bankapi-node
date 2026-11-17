@@ -240,7 +240,24 @@ npm run typecheck     # tsc --noEmit
 npm run build         # tsup, ESM + CJS + types
 npm run check:package # build + publint + attw
 npm run sync-spec     # refresh the pinned OpenAPI contract fixture, webhook vectors and event types
+npm run verify-spec   # check the fixtures and generated files against the pinned API-RS and KIT-RS commits
 ```
+
+The contract fixtures are pinned to two commits recorded in
+`test/fixtures/openapi.lock.json`: `api/openapi.json` from API-RS and
+`oracle/webhook/webhook_vectors_v2.json` from KIT-RS. Both scripts read the
+repositories from `APIRS_DIR` and `KITRS_DIR` (default: `../API-RS` and
+`../KIT-RS` next to this checkout). To move the pin, give a tag, branch or
+commit of each; the lock records the commit it resolves to:
+
+```bash
+APIRS_DIR=../API-RS KITRS_DIR=../KIT-RS npm run sync-spec -- --apirs-ref v0.6.0 --kitrs-ref v0.6.0
+```
+
+`sync-spec` without flags re-syncs the refs already in the lock. It also
+regenerates `src/error-codes.ts` and `src/webhook-events.ts`.
+`npm run verify-spec -- --lock-only` reads no repository: it checks the
+fixture hashes and the generated files against the lock.
 
 Webhook golden vectors are produced by the BankAPI server's own signing code,
 so a change to the signing scheme breaks these tests first.

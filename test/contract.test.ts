@@ -5,7 +5,7 @@ import { ERROR_CODES } from '../src/error-codes.js';
 /**
  * Drift guard: every path/method the SDK calls must exist in the pinned
  * openapi.json, and every JSON key a mapper reads must exist in its schema.
- * Refresh the fixture with `npm run sync-spec` when GO-KIT changes its API.
+ * Refresh the fixture with `npm run sync-spec` when API-RS changes its API.
  */
 const CALLS: Array<[string, string]> = [
   ['get', '/banking/summary'],
@@ -143,8 +143,8 @@ describe('idempotent operations', () => {
     .flatMap((methods) => Object.values(methods))
     .filter((op) => op['x-idempotent'] === true);
 
-  it('the registry still marks exactly 9 operations x-idempotent', () => {
-    expect(idempotentOps).toHaveLength(9);
+  it('the registry still marks exactly 11 operations x-idempotent', () => {
+    expect(idempotentOps).toHaveLength(11);
   });
 
   it.each(idempotentOps.map((op) => [op.operationId, op] as const))(

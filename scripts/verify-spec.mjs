@@ -1,7 +1,11 @@
 #!/usr/bin/env node
-// CI/local gate: fails if test/fixtures/openapi.json has drifted from its
-// lock, or if the lock's ref no longer produces byte-identical GO-KIT
-// content (e.g. the ref was force-pushed to a different commit).
+// Local gate: fails if a contract fixture has drifted from its lock, if a
+// generated file no longer matches the fixture, or if a locked ref no longer
+// resolves to the same commit and byte-identical upstream content (e.g. a
+// tag was moved, or the lock holds a tag object instead of its commit).
+//
+// --lock-only (CI) reads no repository: it checks the fixture hashes against
+// the lock and the generated files against the fixtures.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
@@ -14,95 +18,110 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURE_PATH = resolve(ROOT, 'test/fixtures/openapi.json');
 const LOCK_PATH = resolve(ROOT, 'test/fixtures/openapi.lock.json');
 const ERROR_CODES_PATH = resolve(ROOT, 'src/error-codes.ts');
-const VECTORS_PATH = resolve(ROOT, 'test/fixtures/webhook_vectors.json');
+const VECTORS_PATH = resolve(ROOT, 'test/fixtures/webhook_vectors_v2.json');
 const WEBHOOK_EVENTS_PATH = resolve(ROOT, 'src/webhook-events.ts');
-const SPEC_PATH_IN_GOKIT = 'api/openapi.json';
-const VECTORS_PATH_IN_GOKIT =
-  'internal/modules/connector/transport/httpwebhook/testdata/webhook_vectors.json';
+const SPEC_PATH_IN_APIRS = 'api/openapi.json';
+const VECTORS_PATH_IN_KITRS = 'oracle/webhook/webhook_vectors_v2.json';
 // The spec is well under 1 MB today, but a generous cap costs nothing and
 // avoids a cryptic ENOBUFS if it grows.
 const MAX_BUFFER = 64 * 1024 * 1024;
 
-function resolveGokitDir() {
-  const dir = process.env.GOKIT_DIR ?? resolve(ROOT, '../GO-KIT');
-  return resolve(process.cwd(), dir);
+function fail(message, code = 1) {
+  console.error(message);
+  process.exit(code);
+}
+
+function repoDir(envName, sibling) {
+  const dir = resolve(process.cwd(), process.env[envName] ?? resolve(ROOT, '..', sibling));
+  if (!existsSync(dir)) {
+    fail(`${sibling} checkout not found at ${dir}. Set ${envName} to a ${sibling} clone.`, 2);
+  }
+  return dir;
+}
+
+function git(cwd, args) {
+  return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: MAX_BUFFER });
+}
+
+function readRequired(path) {
+  if (!existsSync(path)) fail(`Missing ${path}. Run npm run sync-spec.`);
+  return readFileSync(path, 'utf8');
+}
+
+const sha256 = (text) => createHash('sha256').update(text).digest('hex');
+
+function verifyUpstream(name, envName, ref, pathInRepo, fixtureName, fixture) {
+  const dir = repoDir(envName, name);
+  const commit = git(dir, ['rev-parse', '--verify', `${ref}^{commit}`]).trim();
+  if (commit !== ref) {
+    fail(
+      `Lock ref ${ref} resolves to commit ${commit} in ${name}; the lock must hold the commit, not a tag object. Run npm run sync-spec.`,
+    );
+  }
+  if (git(dir, ['show', `${ref}:${pathInRepo}`]) !== fixture) {
+    fail(`${fixtureName} no longer matches ${name}@${ref}. Run npm run sync-spec.`);
+  }
 }
 
 function main() {
-  const gokitDir = resolveGokitDir();
-  if (!existsSync(gokitDir)) {
-    console.error(
-      `GO-KIT checkout not found at ${gokitDir}. Set GOKIT_DIR to the path of a GO-KIT clone.`,
+  const lockOnly = process.argv.slice(2).includes('--lock-only');
+
+  const lock = JSON.parse(readRequired(LOCK_PATH));
+  const fixture = readRequired(FIXTURE_PATH);
+  const vectors = readRequired(VECTORS_PATH);
+
+  if (sha256(fixture) !== lock.openapi_sha256) {
+    fail(
+      `test/fixtures/openapi.json does not match its lock (sha256 ${sha256(fixture)}, expected ${lock.openapi_sha256}). Run npm run sync-spec.`,
     );
-    process.exit(2);
   }
-
-  if (!existsSync(LOCK_PATH)) {
-    console.error(`Missing ${LOCK_PATH}. Run npm run sync-spec.`);
-    process.exit(1);
-  }
-  if (!existsSync(FIXTURE_PATH)) {
-    console.error(`Missing ${FIXTURE_PATH}. Run npm run sync-spec.`);
-    process.exit(1);
-  }
-  const lock = JSON.parse(readFileSync(LOCK_PATH, 'utf8'));
-  const fixture = readFileSync(FIXTURE_PATH, 'utf8');
-  const sha256 = createHash('sha256').update(fixture).digest('hex');
-
-  if (sha256 !== lock.sha256) {
-    console.error(
-      `test/fixtures/openapi.json does not match its lock (sha256 ${sha256}, expected ${lock.sha256}). Run npm run sync-spec.`,
+  if (sha256(vectors) !== lock.vectors_sha256) {
+    fail(
+      `test/fixtures/webhook_vectors_v2.json does not match its lock (sha256 ${sha256(vectors)}, expected ${lock.vectors_sha256}). Run npm run sync-spec.`,
     );
-    process.exit(1);
   }
 
-  const upstream = execFileSync('git', ['show', `${lock.gokit_ref}:${SPEC_PATH_IN_GOKIT}`], {
-    cwd: gokitDir,
-    encoding: 'utf8',
-    maxBuffer: MAX_BUFFER,
-  });
-
-  if (upstream !== fixture) {
-    console.error(
-      `test/fixtures/openapi.json no longer matches GO-KIT@${lock.gokit_ref}. Run npm run sync-spec.`,
-    );
-    process.exit(1);
-  }
-
-  const expectedErrorCodes = renderErrorCodes(JSON.parse(fixture));
+  const spec = JSON.parse(fixture);
   const actualErrorCodes = existsSync(ERROR_CODES_PATH)
     ? readFileSync(ERROR_CODES_PATH, 'utf8')
     : '';
-  if (actualErrorCodes !== expectedErrorCodes) {
-    console.error('src/error-codes.ts is stale. Run npm run gen:error-codes.');
-    process.exit(1);
+  if (actualErrorCodes !== renderErrorCodes(spec)) {
+    fail('src/error-codes.ts is stale. Run npm run gen:error-codes.');
+  }
+  const actualEvents = existsSync(WEBHOOK_EVENTS_PATH)
+    ? readFileSync(WEBHOOK_EVENTS_PATH, 'utf8')
+    : '';
+  if (actualEvents !== renderWebhookEvents(spec)) {
+    fail('src/webhook-events.ts is stale. Run npm run sync-spec.');
   }
 
-  const upstreamVectors = execFileSync(
-    'git',
-    ['show', `${lock.gokit_ref}:${VECTORS_PATH_IN_GOKIT}`],
-    {
-      cwd: gokitDir,
-      encoding: 'utf8',
-      maxBuffer: MAX_BUFFER,
-    },
-  );
-  if (!existsSync(VECTORS_PATH) || readFileSync(VECTORS_PATH, 'utf8') !== upstreamVectors) {
-    console.error(
-      `test/fixtures/webhook_vectors.json no longer matches GO-KIT@${lock.gokit_ref}. Run npm run sync-spec.`,
+  if (lockOnly) {
+    console.log(
+      `test/fixtures verified against the lock only (API-RS@${lock.apirs_ref}, KIT-RS@${lock.kitrs_ref}; no repository read)`,
     );
-    process.exit(1);
-  }
-  const expectedEvents = renderWebhookEvents(JSON.parse(fixture));
-  if (
-    !existsSync(WEBHOOK_EVENTS_PATH) ||
-    readFileSync(WEBHOOK_EVENTS_PATH, 'utf8') !== expectedEvents
-  ) {
-    console.error('src/webhook-events.ts is stale. Run npm run sync-spec.');
-    process.exit(1);
+    return;
   }
 
-  console.log(`test/fixtures/openapi.json verified against GO-KIT@${lock.gokit_ref}`);
+  verifyUpstream(
+    'API-RS',
+    'APIRS_DIR',
+    lock.apirs_ref,
+    SPEC_PATH_IN_APIRS,
+    'test/fixtures/openapi.json',
+    fixture,
+  );
+  verifyUpstream(
+    'KIT-RS',
+    'KITRS_DIR',
+    lock.kitrs_ref,
+    VECTORS_PATH_IN_KITRS,
+    'test/fixtures/webhook_vectors_v2.json',
+    vectors,
+  );
+
+  console.log(
+    `test/fixtures verified against API-RS@${lock.apirs_ref} and KIT-RS@${lock.kitrs_ref}`,
+  );
 }
 
 main();

@@ -5,199 +5,193 @@ interface EnvelopeBase<T extends string> {
   /** Event id: identical for every endpoint and every retry. */
   id: string;
   type: T;
-  api_version: 'v1';
+  api_version: '2';
   /** When the event happened, RFC3339 UTC. */
   created_at: string;
   org_id: string;
 }
 
-export interface BankCreditData {
-  /** Amount in VND, an integer exact up to 2^53-1 end to end (projection, wire, and SDK types) */
-  amount: number;
-  /** Bank code, lowercase (ocb, mb, ...) */
+export interface BankingCreditWebhookData {
+  amount_vnd: number;
+  /** `ocb`, `mb` or `klb`. */
   bank: string;
-  /** The bank's own reference for the transaction */
+  /** The bank's reference of the transaction. */
   bank_ref: string;
-  /** Transfer memo as the payer wrote it; untrusted text */
+  /** The payer's text, as the bank sent it: untrusted. */
   description: string;
-  /** When the bank booked the transaction */
+  /** The bank's time of the transaction, in UTC to the second. */
   transaction_date: string;
-  /** Transaction id; equal to the envelope id */
+  /** `btx_…`, the transaction's id in the API. */
   transaction_id: string;
-  /** Virtual account the credit landed in; absent when none matched */
+  /** The virtual account the money was paid into, when one of the org's matched; absent
+otherwise. */
   va_number?: string;
 }
 
-export interface BankDebitData {
-  /** Amount in VND, an integer exact up to 2^53-1 end to end (projection, wire, and SDK types) */
-  amount: number;
-  /** Bank code, lowercase (ocb, mb, ...) */
+export interface BankingDebitWebhookData {
+  amount_vnd: number;
+  /** `ocb`, `mb` or `klb`. */
   bank: string;
-  /** The bank's own reference for the transaction */
+  /** The bank's reference of the transaction. */
   bank_ref: string;
-  /** Transfer memo; untrusted text */
+  /** The bank's text of the transaction: untrusted. */
   description: string;
-  /** When the bank booked the transaction */
+  /** The bank's time of the transaction, in UTC to the second. */
   transaction_date: string;
-  /** Transaction id; equal to the envelope id */
+  /** `btx_…`, the transaction's id in the API. */
   transaction_id: string;
 }
 
-export interface BankPaymentMatchedData {
-  /** Amount in VND, an integer exact up to 2^53-1 end to end (projection, wire, and SDK types) */
-  amount: number;
-  /** The intent's payment code */
+export interface BankingPaymentMatchedWebhookData {
+  amount_vnd: number;
+  /** The intent's code. */
   code: string;
-  /** The payment intent the credit settled */
+  /** `bpi_…`, the payment intent settled. */
   intent_id: string;
-  /** The credit that settled it */
+  /** `btx_…`, the credit that settled it: the `transaction_id` of its `banking.credit`. */
   transaction_id: string;
 }
 
-export interface FlowTrigger {
-  /** The flow that produced this output */
+export interface ConnectorTestWebhookData {
+  message: string;
+}
+
+export interface FlowOutputTrigger {
+  /** The flow that produced this output. */
   flow_id: string;
-  /** Id of the event that triggered the flow */
+  /** The id of the event that triggered the flow. */
   id: string;
-  /** Type of the triggering event */
+  /** The type of the triggering event. */
   type: string;
 }
 
-export interface MemberInvitedData {
-  /** The invitee's email address */
+export type OrganizationCreatedWebhookData = Record<string, unknown>;
+
+export interface OrganizationMemberInvitedWebhookData {
+  /** The invitee's email, normalized. */
   email: string;
 }
 
-export type OrgCreatedData = Record<string, unknown>;
-
-export interface OrgQuotaExceededData {
-  /** The period's limit, an integer exact up to 2^53-1 end to end */
+export interface QuotaExceededWebhookData {
   limit: number;
-  /** First day AFTER the period (Asia/Ho_Chi_Minh) */
   period_end_exclusive: string;
-  /** First day of the period (Asia/Ho_Chi_Minh) */
   period_start: string;
-  resource: 'bank_transactions';
-  /** Usage when the notice fired, an integer exact up to 2^53-1 end to end */
+  resource: string;
   used: number;
 }
 
-export interface SubscriptionEventData {
-  /** End of the current period; absent when none */
-  period_end?: string;
-  /** Start of the current period; absent when none */
-  period_start?: string;
+export interface SubscriptionWebhookData {
+  period_end?: string | null;
+  period_start?: string | null;
   plan_id: string;
   plan_name: string;
-  status: 'pending_payment' | 'active' | 'past_due' | 'expired' | 'cancelled';
+  status: string;
   subscription_id: string;
 }
 
-/** Money arrived in a linked bank account. */
-export interface BankCreditEvent extends EnvelopeBase<'bank.credit'> {
-  data: BankCreditData;
+/** banking.credit */
+export interface BankingCreditEvent extends EnvelopeBase<'banking.credit'> {
+  data: BankingCreditWebhookData;
 }
 
-/** Money left a linked bank account (only banks that push debits emit it). Opt-in: a subscribe-all endpoint does not receive it. */
-export interface BankDebitEvent extends EnvelopeBase<'bank.debit'> {
-  data: BankDebitData;
+/** banking.debit */
+export interface BankingDebitEvent extends EnvelopeBase<'banking.debit'> {
+  data: BankingDebitWebhookData;
 }
 
-/** An incoming credit settled a payment intent. */
-export interface BankPaymentMatchedEvent extends EnvelopeBase<'bank.payment.matched'> {
-  data: BankPaymentMatchedData;
+/** banking.payment_matched */
+export interface BankingPaymentMatchedEvent extends EnvelopeBase<'banking.payment_matched'> {
+  data: BankingPaymentMatchedWebhookData;
 }
 
-/** A flow built this delivery's data from the triggering event. data is whatever the flow produced; trigger names the source event and the flow. */
+/** connector.test */
+export interface ConnectorTestEvent extends EnvelopeBase<'connector.test'> {
+  data: ConnectorTestWebhookData;
+}
+
+/** flow.output */
 export interface FlowOutputEvent extends EnvelopeBase<'flow.output'> {
   data: Record<string, unknown>;
-  trigger: FlowTrigger;
+  trigger: FlowOutputTrigger;
 }
 
-/** The organization was created. */
-export interface OrgCreatedEvent extends EnvelopeBase<'org.created'> {
-  data: OrgCreatedData;
+/** organization.created */
+export interface OrganizationCreatedEvent extends EnvelopeBase<'organization.created'> {
+  data: OrganizationCreatedWebhookData;
 }
 
-/** Someone was invited to join the organization. */
-export interface OrgMemberInvitedEvent extends EnvelopeBase<'org.member_invited'> {
-  data: MemberInvitedData;
+/** organization.member_invited */
+export interface OrganizationMemberInvitedEvent extends EnvelopeBase<'organization.member_invited'> {
+  data: OrganizationMemberInvitedWebhookData;
 }
 
-/** The organization used up its monthly transaction quota; deliveries of bank events pause until the next period or an upgrade. */
-export interface OrgQuotaExceededEvent extends EnvelopeBase<'org.quota_exceeded'> {
-  data: OrgQuotaExceededData;
+/** quota.exceeded */
+export interface QuotaExceededEvent extends EnvelopeBase<'quota.exceeded'> {
+  data: QuotaExceededWebhookData;
 }
 
-/** A subscription became active. */
+/** subscription.activated */
 export interface SubscriptionActivatedEvent extends EnvelopeBase<'subscription.activated'> {
-  data: SubscriptionEventData;
+  data: SubscriptionWebhookData;
 }
 
-/** A subscription was cancelled. */
+/** subscription.cancelled */
 export interface SubscriptionCancelledEvent extends EnvelopeBase<'subscription.cancelled'> {
-  data: SubscriptionEventData;
+  data: SubscriptionWebhookData;
 }
 
-/** A subscription ended unpaid. */
+/** subscription.expired */
 export interface SubscriptionExpiredEvent extends EnvelopeBase<'subscription.expired'> {
-  data: SubscriptionEventData;
+  data: SubscriptionWebhookData;
 }
 
-/** A subscription renewal is unpaid. */
+/** subscription.past_due */
 export interface SubscriptionPastDueEvent extends EnvelopeBase<'subscription.past_due'> {
-  data: SubscriptionEventData;
+  data: SubscriptionWebhookData;
 }
 
-/** A subscription was renewed for another period. */
+/** subscription.renewed */
 export interface SubscriptionRenewedEvent extends EnvelopeBase<'subscription.renewed'> {
-  data: SubscriptionEventData;
-}
-
-/** A test send an org requested for this endpoint. It is never subscribed to and never retried; acknowledge it like any other type. */
-export interface WebhookTestEvent extends EnvelopeBase<'webhook.test'> {
-  data: {
-  message: string;
-};
+  data: SubscriptionWebhookData;
 }
 
 export type KnownWebhookEnvelope =
-  | BankCreditEvent
-  | BankDebitEvent
-  | BankPaymentMatchedEvent
+  | BankingCreditEvent
+  | BankingDebitEvent
+  | BankingPaymentMatchedEvent
+  | ConnectorTestEvent
   | FlowOutputEvent
-  | OrgCreatedEvent
-  | OrgMemberInvitedEvent
-  | OrgQuotaExceededEvent
+  | OrganizationCreatedEvent
+  | OrganizationMemberInvitedEvent
+  | QuotaExceededEvent
   | SubscriptionActivatedEvent
   | SubscriptionCancelledEvent
   | SubscriptionExpiredEvent
   | SubscriptionPastDueEvent
-  | SubscriptionRenewedEvent
-  | WebhookTestEvent;
+  | SubscriptionRenewedEvent;
 
 /** An event type this SDK version does not know yet. Acknowledge it; do not fail. */
 export interface UnknownWebhookEnvelope extends EnvelopeBase<string> {
   data: Record<string, unknown>;
-  trigger?: FlowTrigger;
+  trigger?: FlowOutputTrigger;
 }
 
 export type WebhookEnvelope = KnownWebhookEnvelope | UnknownWebhookEnvelope;
 
 export const WEBHOOK_EVENT_TYPES = [
-  'bank.credit',
-  'bank.debit',
-  'bank.payment.matched',
+  'banking.credit',
+  'banking.debit',
+  'banking.payment_matched',
+  'connector.test',
   'flow.output',
-  'org.created',
-  'org.member_invited',
-  'org.quota_exceeded',
+  'organization.created',
+  'organization.member_invited',
+  'quota.exceeded',
   'subscription.activated',
   'subscription.cancelled',
   'subscription.expired',
   'subscription.past_due',
   'subscription.renewed',
-  'webhook.test',
 ] as const;
 
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
