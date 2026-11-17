@@ -34,6 +34,7 @@ describe('openapi spec lock', () => {
     expect(lock.kitrs_ref).toMatch(/^[0-9a-f]{40}$/);
     expect(lock.openapi_sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(lock.vectors_sha256).toMatch(/^[0-9a-f]{64}$/);
+    // Built from parts so the S5 legacy-name grep stays empty; do not inline it.
     expect(Object.keys(lock)).not.toContain(['gokit', 'ref'].join('_'));
   });
 

@@ -52,7 +52,12 @@ const sha256 = (text) => createHash('sha256').update(text).digest('hex');
 
 function verifyUpstream(name, envName, ref, pathInRepo, fixtureName, fixture) {
   const dir = repoDir(envName, name);
-  const commit = git(dir, ['rev-parse', '--verify', `${ref}^{commit}`]).trim();
+  let commit;
+  try {
+    commit = git(dir, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).trim();
+  } catch {
+    fail(`Lock ref ${ref} not found in ${name} at ${dir}; fetch it or set ${envName}.`);
+  }
   if (commit !== ref) {
     fail(
       `Lock ref ${ref} resolves to commit ${commit} in ${name}; the lock must hold the commit, not a tag object. Run npm run sync-spec.`,

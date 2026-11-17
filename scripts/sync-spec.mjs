@@ -52,8 +52,13 @@ function git(cwd, args) {
 
 // `^{commit}` peels an annotated tag to its commit; a bare rev-parse would
 // record the tag object's sha instead.
-function resolveCommit(cwd, ref) {
-  return git(cwd, ['rev-parse', '--verify', `${ref}^{commit}`]).trim();
+function resolveCommit(cwd, ref, name, envName) {
+  try {
+    return git(cwd, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).trim();
+  } catch {
+    console.error(`Ref ${ref} not found in ${name} at ${cwd}; fetch it or set ${envName}.`);
+    process.exit(2);
+  }
 }
 
 const sha256 = (text) => createHash('sha256').update(text).digest('hex');
@@ -73,8 +78,8 @@ function main() {
     process.exit(2);
   }
 
-  const apirsRef = resolveCommit(apirsDir, apirsRefArg);
-  const kitrsRef = resolveCommit(kitrsDir, kitrsRefArg);
+  const apirsRef = resolveCommit(apirsDir, apirsRefArg, 'API-RS', 'APIRS_DIR');
+  const kitrsRef = resolveCommit(kitrsDir, kitrsRefArg, 'KIT-RS', 'KITRS_DIR');
   const spec = git(apirsDir, ['show', `${apirsRef}:${SPEC_PATH_IN_APIRS}`]);
   const vectors = git(kitrsDir, ['show', `${kitrsRef}:${VECTORS_PATH_IN_KITRS}`]);
 
