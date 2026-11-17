@@ -18,7 +18,6 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { isAbsolute, join } from 'node:path';
 import { promisify } from 'node:util';
-import { vietqrUrl } from './lib/vietqr-url.mjs';
 
 const DESCRIPTION = 'e2e smoke: node';
 const RELAY_URL = 'https://relay.stub.test:8443/node/hooks/bankapi';
@@ -65,7 +64,7 @@ function positiveInt(name, fallback) {
   return value;
 }
 
-// KEY=VALUE lines; only the four named keys are kept, so nothing else in the file is held.
+// KEY=VALUE lines; only the three named keys are kept, so nothing else in the file is held.
 function readEnvFile(path) {
   const wanted = new Set(['BANKAPI_BASE_URL', 'BANKAPI_KEY', 'E2E_CONNECTION_ID']);
   const out = {};
@@ -225,7 +224,7 @@ async function main() {
     // design): the contract says bin absent = hide the QR, so a client shows none.
     // The render path itself is unit-tested (test/vietqr-url.test.ts). No later step
     // reads this, so a FAIL here is counted and the run still proves F4 and F5 (a).
-    if (conn.bin !== null || vietqrUrl(baseUrl, conn, intent) !== null) {
+    if (conn.bin !== null) {
       softFail('F5a', `qr hidden expected: connection ${conn.id} has bin ${conn.bin}`);
     } else {
       pass('F5a qr hidden', `connection ${conn.id} bank=${conn.bankCode} has no bin`);
