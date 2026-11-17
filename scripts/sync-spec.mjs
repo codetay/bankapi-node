@@ -47,7 +47,12 @@ function readLock() {
 }
 
 function git(cwd, args) {
-  return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: MAX_BUFFER });
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: MAX_BUFFER,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
 }
 
 // `^{commit}` peels an annotated tag to its commit; a bare rev-parse would
@@ -55,8 +60,14 @@ function git(cwd, args) {
 function resolveCommit(cwd, ref, name, envName) {
   try {
     return git(cwd, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).trim();
-  } catch {
-    console.error(`Ref ${ref} not found in ${name} at ${cwd}; fetch it or set ${envName}.`);
+  } catch (err) {
+    // --quiet keeps stderr empty for a missing ref; any output means git refused the directory.
+    const reason = String(err.stderr ?? '').trim();
+    console.error(
+      reason === ''
+        ? `Ref ${ref} not found in ${name} at ${cwd}; fetch it or set ${envName}.`
+        : `${name} at ${cwd} is not a git checkout (${reason.split('\n')[0]}). Set ${envName} to a ${name} clone.`,
+    );
     process.exit(2);
   }
 }

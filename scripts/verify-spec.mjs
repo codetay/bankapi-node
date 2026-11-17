@@ -40,7 +40,12 @@ function repoDir(envName, sibling) {
 }
 
 function git(cwd, args) {
-  return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: MAX_BUFFER });
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: MAX_BUFFER,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
 }
 
 function readRequired(path) {
@@ -55,7 +60,15 @@ function verifyUpstream(name, envName, ref, pathInRepo, fixtureName, fixture) {
   let commit;
   try {
     commit = git(dir, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).trim();
-  } catch {
+  } catch (err) {
+    // --quiet keeps stderr empty for a missing ref; any output means git refused the directory.
+    const reason = String(err.stderr ?? '').trim();
+    if (reason !== '') {
+      fail(
+        `${name} at ${dir} is not a git checkout (${reason.split('\n')[0]}). Set ${envName} to a ${name} clone.`,
+        2,
+      );
+    }
     fail(`Lock ref ${ref} not found in ${name} at ${dir}; fetch it or set ${envName}.`);
   }
   if (commit !== ref) {
