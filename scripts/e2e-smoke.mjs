@@ -11,7 +11,8 @@
 // From the env file it reads only BANKAPI_BASE_URL, BANKAPI_KEY and
 // E2E_CONNECTION_ID. It prints no secret: not the key, not the endpoint secret.
 //
-// Exit 0 only when every step prints PASS; 1 on the first FAIL; 2 on missing input.
+// Exit 0 only when every step prints PASS; 1 on any FAIL (each FAIL but the QR one
+// stops the run); 2 on missing input.
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -27,6 +28,13 @@ class StepFailure extends Error {}
 function fail(id, reason) {
   console.log(`FAIL ${id} ${reason}`);
   throw new StepFailure(id);
+}
+
+let softFailures = 0;
+
+function softFail(id, reason) {
+  console.log(`FAIL ${id} ${reason}`);
+  softFailures += 1;
 }
 
 const pass = (id, detail = '') => console.log(`PASS ${id}${detail === '' ? '' : ` ${detail}`}`);
@@ -208,24 +216,27 @@ async function main() {
     if (intent.status !== 'pending') fail('intent', `${intent.id} status=${intent.status}`);
     pass('intent', `${intent.id} code=${code} status=pending`);
 
-    // QR: raw route, no /v2 prefix, no key.
+    // QR: raw route, no /v2 prefix, no key. No later step reads it, so a FAIL here
+    // is counted and the run still proves F4 and F5 (a); the exit code reports it.
     if (conn.bin === null || conn.accountNumber === null) {
-      fail('F5a', 'qr connection has no bin/account_number');
+      softFail('F5a', 'qr connection has no bin/account_number');
+    } else {
+      const qr = await fetch(
+        `${baseUrl}/qr/vietqr.png?${new URLSearchParams({
+          bin: conn.bin,
+          account: conn.accountNumber,
+          amount: String(amount),
+          memo: code,
+        })}`,
+      );
+      const png = Buffer.from(await qr.arrayBuffer());
+      const type = qr.headers.get('content-type') ?? '';
+      if (qr.status !== 200 || !type.startsWith('image/png')) {
+        softFail('F5a', `qr status=${qr.status} content-type=${type} bytes=${png.length}`);
+      } else {
+        pass('F5a qr', `status=200 bytes=${png.length}`);
+      }
     }
-    const qr = await fetch(
-      `${baseUrl}/qr/vietqr.png?${new URLSearchParams({
-        bin: conn.bin,
-        account: conn.accountNumber,
-        amount: String(amount),
-        memo: code,
-      })}`,
-    );
-    const png = Buffer.from(await qr.arrayBuffer());
-    const type = qr.headers.get('content-type') ?? '';
-    if (qr.status !== 200 || !type.startsWith('image/png')) {
-      fail('F5a', `qr status=${qr.status} content-type=${type} bytes=${png.length}`);
-    }
-    pass('F5a qr', `status=200 bytes=${png.length}`);
 
     // Credit through the stubs container, without a shell.
     const ref = `NODESMOKE${Math.floor(Date.now() / 1000)}`;
@@ -344,7 +355,7 @@ async function main() {
 }
 
 main().then(
-  () => process.exit(0),
+  () => process.exit(softFailures === 0 ? 0 : 1),
   (err) => {
     if (!(err instanceof StepFailure)) console.log(`FAIL smoke ${problemOf(err)} ${err?.message}`);
     process.exit(1);
