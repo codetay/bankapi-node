@@ -9,6 +9,8 @@ signature verification. Zero runtime dependencies, ESM and CommonJS, Node 20+.
 npm install @codetay/bankapi-node
 ```
 
+Release candidate (this README documents 3.x): `npm install @codetay/bankapi-node@next`.
+
 ## Quickstart
 
 ```ts

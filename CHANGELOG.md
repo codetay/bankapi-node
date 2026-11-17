@@ -29,7 +29,8 @@ v2; `https://api.bankapi.vn` serves it from the v2 cutover.
   `cursor`, `q`) instead of an array; walk it with `for await`.
 - Webhook endpoints are the `webhook` connectors of `/v2/connectors`.
   `webhookEndpoints.create(url, eventTypes, description)` sends no
-  `Idempotency-Key` and takes no options argument: the operation is not
+  `Idempotency-Key` and takes no options argument (the
+  `CreateEndpointOptions` type is removed): the operation is not
   idempotent. After a timeout, call `all()` and match on `description`
   before creating again; every read shows the url masked.
 - `webhookEndpoints.enable` sends `PATCH {"active": true}`.
