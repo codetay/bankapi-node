@@ -178,7 +178,8 @@ async function main() {
 
   // Receiver: every request goes through the SDK middleware.
   const received = [];
-  const payments = new Set();
+  // transaction_id -> payments the receiver recorded; a count above 1 is a double booking.
+  const payments = new Map();
   let rejected = 0;
   const middleware = bankapiWebhook({ secret });
   const server = createServer((req, res) => {
@@ -199,7 +200,10 @@ async function main() {
         api_version: event.api_version,
         data: event.data,
       });
-      if (isWebhookEvent(event, 'banking.credit')) payments.add(event.data.transaction_id);
+      if (isWebhookEvent(event, 'banking.credit')) {
+        const tx = event.data.transaction_id;
+        payments.set(tx, (payments.get(tx) ?? 0) + 1);
+      }
       res.statusCode = 204;
       res.end();
     });
@@ -343,8 +347,9 @@ async function main() {
     if (again.tx !== tx) fail('F4 dedupe', `redelivery recorded ${again.tx}, expected ${tx}`);
     await sleep(limits.SMOKE_QUIET_SECONDS * 1000);
     const ids = new Set(received.filter(creditOf).map((e) => e.id));
-    if (ids.size !== 1 || !payments.has(tx)) {
-      fail('F4 dedupe', `${ids.size} banking.credit event ids for ${tx}`);
+    const recorded = payments.get(tx) ?? 0;
+    if (ids.size !== 1 || recorded !== 1) {
+      fail('F4 dedupe', `${ids.size} banking.credit event ids, ${recorded} payments for ${tx}`);
     }
     pass('F4 dedupe', `same transaction ${tx}, 1 banking.credit event id, 1 payment`);
   } finally {
