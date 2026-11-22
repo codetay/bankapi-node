@@ -608,6 +608,10 @@
           },
           "status": {
             "$ref": "#/components/schemas/AdminOrgStatus"
+          },
+          "two_factor_required": {
+            "description": "Members signed in as users need two-factor authentication for the org's operations; API\nkeys do not.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -616,7 +620,8 @@
           "name",
           "status",
           "member_count",
-          "created_at"
+          "created_at",
+          "two_factor_required"
         ],
         "type": "object"
       },
@@ -742,7 +747,7 @@
       },
       "AdminOrgUpdate": {
         "additionalProperties": false,
-        "description": "Rename an org (its slug never changes), suspend it (`suspended`) or reactivate it\n(`active`); at least one of the two.",
+        "description": "Rename an org (its slug never changes), suspend it (`suspended`) or reactivate it\n(`active`), require two-factor authentication of its members or lift that; at least one.",
         "properties": {
           "name": {
             "description": "Trimmed, 1 to 120 characters.",
@@ -761,6 +766,13 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "two_factor_required": {
+            "description": "`true`: members signed in as users must turn on two-factor authentication before any of\nthe org's operations (API keys are not held to it); `false` lifts it.",
+            "type": [
+              "boolean",
+              "null"
             ]
           }
         },
@@ -1286,6 +1298,29 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "AdminTwoFactorReset": {
+        "additionalProperties": false,
+        "description": "Why an operator resets an account's second factor (its owner lost both the authenticator and\nthe backup codes), and the operator's own fresh TOTP code.",
+        "properties": {
+          "reason": {
+            "description": "Recorded in the audit log and the account's event; 1 to 500 characters and at most 1024\nbytes once trimmed.",
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "totp_code": {
+            "format": "password",
+            "maxLength": 19,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "totp_code"
+        ],
         "type": "object"
       },
       "AdminUnappliedPayment": {
@@ -8303,6 +8338,21 @@
         ],
         "type": "object"
       },
+      "Regeneration": {
+        "properties": {
+          "code": {
+            "description": "A current code of the authenticator app; a backup code is not taken.",
+            "format": "password",
+            "maxLength": 19,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
       "Registration": {
         "properties": {
           "email": {
@@ -8715,6 +8765,7 @@
             "type": "string"
           },
           "last_payment_id": {
+            "description": "`pay_…`, the last payment that charged this subscription.",
             "type": "string"
           },
           "payment_method": {
@@ -8813,6 +8864,7 @@
             "type": "string"
           },
           "last_payment_id": {
+            "description": "`pay_…`, the last payment that charged this subscription.",
             "type": "string"
           },
           "payment_method": {
@@ -8850,7 +8902,7 @@
             ]
           },
           "payment_id": {
-            "description": "The payment to watch.",
+            "description": "The payment to watch: `pay_…`.",
             "type": "string"
           },
           "presentation": {
@@ -21109,7 +21161,7 @@
                 }
               }
             },
-            "description": "admin.user_is_admin, deletion.account_owns_org, deletion.in_progress"
+            "description": "admin.user_is_admin, deletion.account_has_dependents, deletion.account_owns_org, deletion.in_progress"
           },
           "413": {
             "content": {
@@ -21202,6 +21254,7 @@
           "access.authentication_unavailable",
           "admin.totp_invalid",
           "admin.user_is_admin",
+          "deletion.account_has_dependents",
           "deletion.account_owns_org",
           "deletion.in_progress",
           "deletion.super_admin_not_deletable",
@@ -22246,6 +22299,192 @@
         "x-rate-tier": "auth"
       }
     },
+    "/v2/admin/users/{user_id}/two-factor": {
+      "delete": {
+        "operationId": "admin.two_factor.delete",
+        "parameters": [
+          {
+            "description": "`usr_` and the account's 32 lowercase hex digits",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminTwoFactorReset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Off: the account is signed out everywhere and told; its next sign-in asks for the password alone. Never the caller's own."
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "request.body_unreadable, request.invalid_id"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "access.authentication_required"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "access.admin_required, access.admin_twofa_required, access.api_key_not_allowed, admin.totp_invalid"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "resource.not_found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "admin.twofa_not_resettable, admin.user_is_admin, admin.user_is_super_admin"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "request.body_too_large"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "request.unsupported_media_type"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "request.invalid"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "request.rate_limited"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "request.internal_error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "access.admin_permissions_unavailable, access.authentication_unavailable, request.rate_limit_unavailable, request.timeout"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "servers": [
+          {
+            "description": "Admin host",
+            "url": "https://{admin_host}",
+            "variables": {
+              "admin_host": {
+                "default": "admin.example",
+                "description": "The configured admin host"
+              }
+            }
+          }
+        ],
+        "summary": "Reset the second factor an account lost",
+        "tags": [
+          "admin"
+        ],
+        "x-error-codes": [
+          "access.admin_permissions_unavailable",
+          "access.admin_required",
+          "access.admin_twofa_required",
+          "access.api_key_not_allowed",
+          "access.authentication_required",
+          "access.authentication_unavailable",
+          "admin.totp_invalid",
+          "admin.twofa_not_resettable",
+          "admin.user_is_admin",
+          "admin.user_is_super_admin",
+          "request.body_too_large",
+          "request.body_unreadable",
+          "request.internal_error",
+          "request.invalid",
+          "request.invalid_id",
+          "request.rate_limit_unavailable",
+          "request.rate_limited",
+          "request.timeout",
+          "request.unsupported_media_type",
+          "resource.not_found"
+        ],
+        "x-permission": "admin:users:write",
+        "x-rate-tier": "auth"
+      }
+    },
     "/v2/api-keys": {
       "get": {
         "operationId": "apikey.api_keys.list",
@@ -22312,7 +22551,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -22396,6 +22635,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -22457,7 +22697,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended, authz.permission_escalation"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required, authz.permission_escalation"
           },
           "404": {
             "content": {
@@ -22571,6 +22811,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "apikey.scope_invalid",
           "authz.permission_escalation",
@@ -22633,7 +22874,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -22717,6 +22958,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -22832,7 +23074,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -22916,6 +23158,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -23003,7 +23246,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -23087,6 +23330,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -23170,7 +23414,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -23284,6 +23528,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "banking.bank_unsupported",
           "idempotency.in_progress",
@@ -23361,7 +23606,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -23445,6 +23690,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -23502,7 +23748,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -23596,6 +23842,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "banking.connection_not_purgeable",
           "request.body_too_large",
@@ -23659,7 +23906,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -23743,6 +23990,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -23815,7 +24063,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -23929,6 +24177,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "banking.pending_connection_exists",
           "quota.exceeded",
@@ -24001,7 +24250,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -24105,6 +24354,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "banking.bank_unsupported",
           "banking.consent_in_progress",
@@ -24170,7 +24420,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -24264,6 +24514,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "banking.bank_unsupported",
           "request.body_too_large",
@@ -24337,7 +24588,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -24451,6 +24702,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "banking.bank_unsupported",
           "banking.consent_in_progress",
@@ -24522,7 +24774,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -24606,6 +24858,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -24690,7 +24943,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -24814,6 +25067,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "banking.otp_payload_invalid",
           "banking.otp_provider_unavailable",
@@ -24900,7 +25154,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -25014,6 +25268,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "banking.bank_unsupported",
           "banking.recipient_lookup_failed",
@@ -25085,7 +25340,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -25169,6 +25424,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -25233,7 +25489,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -25317,6 +25573,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -25401,7 +25658,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -25545,6 +25802,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "banking.account_already_linked",
           "banking.consent_required",
@@ -25690,7 +25948,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -25774,6 +26032,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -25842,7 +26101,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -25926,6 +26185,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -25991,7 +26251,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -26075,6 +26335,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -26150,7 +26411,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -26264,6 +26525,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "banking.match_conflict",
           "banking.match_invalid",
@@ -26447,7 +26709,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -26563,6 +26825,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "branding.field_invalid",
           "request.body_too_large",
@@ -26604,7 +26867,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -26690,6 +26953,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -26762,7 +27026,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -26878,6 +27142,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "branding.logo_invalid",
           "request.body_too_large",
@@ -26926,7 +27191,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -27010,6 +27275,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -27119,7 +27385,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -27203,6 +27469,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -27299,7 +27566,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -27383,6 +27650,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -27444,7 +27712,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -27558,6 +27826,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "connector.config_invalid",
           "connector.url_invalid",
@@ -27606,7 +27875,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -27690,6 +27959,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -27752,7 +28022,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -27856,6 +28126,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "connector.config_invalid",
           "request.body_too_large",
@@ -27917,7 +28188,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -28001,6 +28272,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -28063,7 +28335,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -28147,6 +28419,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -28219,7 +28492,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -28333,6 +28606,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "connector.config_invalid",
           "connector.url_invalid",
@@ -28437,7 +28711,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -28521,6 +28795,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -28596,7 +28871,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -28710,6 +28985,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "connector.delivery_expired",
           "connector.delivery_not_found",
@@ -28780,7 +29056,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -28884,6 +29160,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "connector.type_unsupported_action",
           "request.body_too_large",
@@ -28950,7 +29227,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -29044,6 +29321,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "connector.test_unsupported",
           "request.body_too_large",
@@ -29234,7 +29512,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -29318,6 +29596,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -29402,7 +29681,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -29516,6 +29795,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "credit.amount_invalid",
           "credit.idempotency_conflict",
@@ -29570,7 +29850,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -29654,6 +29934,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -29794,7 +30075,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended, customer.child_restricted"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required, customer.child_restricted"
           },
           "404": {
             "content": {
@@ -29908,6 +30189,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "credit.checkout_conflict",
           "credit.checkout_unavailable",
@@ -29997,7 +30279,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -30081,6 +30363,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -30158,7 +30441,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -30242,6 +30525,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -30316,7 +30600,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -30432,6 +30716,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "idempotency.in_progress",
           "idempotency.key_invalid",
@@ -30521,7 +30806,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended, deletion.api_key_forbidden"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required, deletion.api_key_forbidden"
           },
           "404": {
             "content": {
@@ -30635,6 +30920,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "auth.invalid_credentials",
           "auth.twofa_code_invalid",
@@ -30697,7 +30983,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -30781,6 +31067,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "customer.not_found",
           "request.body_too_large",
@@ -30836,7 +31123,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -30922,6 +31209,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "customer.not_found",
           "request.body_too_large",
@@ -30970,7 +31258,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -31066,6 +31354,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "customer.not_found",
           "customer.not_provisioning",
@@ -31143,7 +31432,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -31259,6 +31548,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.body_unreadable",
@@ -31329,7 +31619,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -31425,6 +31715,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -31765,7 +32056,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -31861,6 +32152,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "deletion.in_progress",
           "request.body_too_large",
@@ -31903,7 +32195,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -31988,6 +32280,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -32049,7 +32342,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -32165,6 +32458,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "customdomain.claimed",
           "customdomain.invalid",
@@ -32214,7 +32508,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -32310,6 +32604,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "customdomain.verification_unavailable",
           "deletion.in_progress",
@@ -32659,7 +32954,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -32743,6 +33038,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -32834,7 +33130,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -32918,6 +33214,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -32981,7 +33278,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -33075,6 +33372,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "flow.approval_flow_inactive",
           "flow.approval_not_waiting",
@@ -33141,7 +33439,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -33235,6 +33533,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "flow.approval_flow_inactive",
           "flow.approval_not_waiting",
@@ -33301,7 +33600,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -33405,6 +33704,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "flow.condition_invalid",
           "flow.conditions_unsupported",
@@ -33497,7 +33797,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -33581,6 +33881,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -33659,7 +33960,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -33743,6 +34044,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -33816,7 +34118,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -33930,6 +34232,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "flow.condition_invalid",
           "flow.conditions_unsupported",
@@ -33987,7 +34290,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -34071,6 +34374,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -34126,7 +34430,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -34210,6 +34514,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -34271,7 +34576,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -34355,6 +34660,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -34426,7 +34732,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -34540,6 +34846,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "flow.condition_invalid",
           "flow.conditions_unsupported",
@@ -34585,7 +34892,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -34671,6 +34978,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -34712,7 +35020,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -34796,6 +35104,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -34857,7 +35166,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -34963,6 +35272,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "org_mailer.smtp_invalid",
           "org_mailer.smtp_unreachable",
@@ -35011,7 +35321,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -35117,6 +35427,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "org_mailer.smtp_not_configured",
           "org_mailer.smtp_test_failed",
@@ -35205,7 +35516,7 @@
                 }
               }
             },
-            "description": "deletion.account_owns_org, deletion.in_progress"
+            "description": "deletion.account_has_dependents, deletion.account_owns_org, deletion.in_progress"
           },
           "413": {
             "content": {
@@ -35292,6 +35603,7 @@
           "auth.invalid_credentials",
           "auth.twofa_code_invalid",
           "auth.twofa_unavailable",
+          "deletion.account_has_dependents",
           "deletion.account_owns_org",
           "deletion.in_progress",
           "deletion.reauth_unavailable",
@@ -36360,7 +36672,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -36444,6 +36756,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -36861,6 +37174,182 @@
           "request.timeout",
           "resource.not_found"
         ]
+      }
+    },
+    "/v2/me/two-factor/backup-codes": {
+      "post": {
+        "operationId": "twofa.backup_codes.regenerate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Regeneration"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupCodes"
+                }
+              }
+            },
+            "description": "A new set: every earlier backup code stops working; the sessions stay."
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "request.body_unreadable, twofa.code_invalid"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "access.authentication_required, auth.principal_invalid, auth.security_state_changed"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "access.api_key_not_allowed, access.org_suspended"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "resource.not_found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "twofa.not_enabled"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "request.body_too_large"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "request.unsupported_media_type"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "request.invalid"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "request.rate_limited, request.too_many_attempts"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "request.internal_error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "access.authentication_unavailable, access.tenant_resolve_unavailable, request.rate_limit_unavailable, request.timeout, twofa.state_unknown, twofa.unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "servers": [
+          {
+            "description": "Account-level host; an API key acts on its own organization",
+            "url": "https://api.bankapi.vn"
+          }
+        ],
+        "summary": "Replace the backup codes",
+        "tags": [
+          "twofa"
+        ],
+        "x-error-codes": [
+          "access.api_key_not_allowed",
+          "access.authentication_required",
+          "access.authentication_unavailable",
+          "access.org_suspended",
+          "access.tenant_resolve_unavailable",
+          "auth.principal_invalid",
+          "auth.security_state_changed",
+          "request.body_too_large",
+          "request.body_unreadable",
+          "request.internal_error",
+          "request.invalid",
+          "request.rate_limit_unavailable",
+          "request.rate_limited",
+          "request.timeout",
+          "request.too_many_attempts",
+          "request.unsupported_media_type",
+          "resource.not_found",
+          "twofa.code_invalid",
+          "twofa.not_enabled",
+          "twofa.state_unknown",
+          "twofa.unavailable"
+        ],
+        "x-rate-tier": "auth"
       }
     },
     "/v2/me/two-factor/disable": {
@@ -37407,7 +37896,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -37491,6 +37980,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -37557,7 +38047,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended, authz.permission_escalation"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required, authz.permission_escalation"
           },
           "404": {
             "content": {
@@ -37671,6 +38161,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "authz.permission_escalation",
           "authz.role_invalid",
@@ -37719,7 +38210,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -37813,6 +38304,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "organization.member_last_owner",
           "request.body_too_large",
@@ -37869,7 +38361,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended, authz.permission_escalation"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required, authz.permission_escalation"
           },
           "404": {
             "content": {
@@ -37963,6 +38455,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "authz.permission_escalation",
           "organization.member_last_owner",
@@ -38022,7 +38515,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -38116,6 +38609,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "organization.invitation_not_pending",
           "request.body_too_large",
@@ -38191,7 +38685,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended, authz.permission_escalation"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required, authz.permission_escalation"
           },
           "404": {
             "content": {
@@ -38305,6 +38799,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "authz.permission_escalation",
           "authz.role_invalid",
@@ -38368,7 +38863,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended, organization.owner_required"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required, organization.owner_required"
           },
           "404": {
             "content": {
@@ -38462,6 +38957,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "organization.owner_required",
           "organization.transfer_target_invalid",
@@ -38507,7 +39003,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -38591,6 +39087,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -38663,7 +39160,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -38767,6 +39264,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "notifications.event_unknown",
           "request.body_too_large",
@@ -38846,7 +39344,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -38930,6 +39428,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -38972,7 +39471,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -39056,6 +39555,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -39097,7 +39597,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -39181,6 +39681,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -39253,7 +39754,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -39357,6 +39858,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.body_unreadable",
@@ -39422,7 +39924,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended, deletion.api_key_forbidden"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required, deletion.api_key_forbidden"
           },
           "404": {
             "content": {
@@ -39536,6 +40038,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "auth.invalid_credentials",
           "auth.twofa_code_invalid",
@@ -39606,7 +40109,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -39710,6 +40213,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.body_unreadable",
@@ -40116,7 +40620,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -40222,6 +40726,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.plugin_inactive",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
@@ -40283,7 +40788,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -40367,6 +40872,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -40449,7 +40955,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended, plugin.managed_by_parent"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required, plugin.managed_by_parent"
           },
           "404": {
             "content": {
@@ -40553,6 +41059,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.plugin_inactive",
           "access.tenant_resolve_unavailable",
           "plugin.managed_by_parent",
@@ -40944,7 +41451,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -41028,6 +41535,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -41101,7 +41609,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -41215,6 +41723,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "banking.intent_code_duplicate",
           "banking.intent_code_reserved",
@@ -41289,7 +41798,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -41373,6 +41882,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -41416,7 +41926,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -41502,6 +42012,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "payments.payment_method_encryption_unavailable",
           "request.body_too_large",
@@ -41564,7 +42075,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -41680,6 +42191,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "payments.payment_method_connection_invalid",
           "payments.payment_method_duplicate_provider",
@@ -41737,7 +42249,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -41833,6 +42345,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "payments.payment_method_in_use",
           "request.body_too_large",
@@ -41906,7 +42419,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -42022,6 +42535,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "payments.payment_method_connection_invalid",
           "payments.payment_method_encryption_unavailable",
@@ -42076,7 +42590,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -42162,6 +42676,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -42275,7 +42790,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -42399,6 +42914,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "payments.gateway_unavailable",
           "payments.input_invalid",
@@ -42473,7 +42989,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -42557,6 +43073,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -42622,7 +43139,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -42706,6 +43223,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -42864,7 +43382,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -42948,6 +43466,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -43025,7 +43544,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -43111,6 +43630,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -43173,7 +43693,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -43289,6 +43809,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "plan.definition_invalid",
           "plan.name_taken",
@@ -43369,7 +43890,7 @@
                 }
               }
             },
-            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.feature_disabled, access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -43485,6 +44006,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "plan.definition_invalid",
           "plan.name_taken",
@@ -43535,7 +44057,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -43619,6 +44141,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -43809,7 +44332,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -43893,6 +44416,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -43966,7 +44490,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended, authz.permission_escalation"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required, authz.permission_escalation"
           },
           "404": {
             "content": {
@@ -44080,6 +44604,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "authz.permission_escalation",
           "authz.role_invalid",
@@ -44149,7 +44674,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended, authz.permission_escalation, authz.role_not_editable"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required, authz.permission_escalation, authz.role_not_editable"
           },
           "404": {
             "content": {
@@ -44243,6 +44768,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "authz.permission_escalation",
           "authz.role_in_use",
@@ -44318,7 +44844,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended, authz.permission_escalation, authz.role_not_editable"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required, authz.permission_escalation, authz.role_not_editable"
           },
           "404": {
             "content": {
@@ -44432,6 +44958,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "authz.permission_escalation",
           "authz.role_invalid",
@@ -45171,7 +45698,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -45255,6 +45782,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -45350,7 +45878,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended, customer.child_restricted, storefront.purchase_rejected"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required, customer.child_restricted, storefront.purchase_rejected"
           },
           "404": {
             "content": {
@@ -45464,6 +45992,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "customer.child_restricted",
           "idempotency.in_progress",
@@ -45556,7 +46085,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -45640,6 +46169,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -45705,7 +46235,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -45799,6 +46329,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -45843,7 +46374,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -45927,6 +46458,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -45971,7 +46503,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -46055,6 +46587,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -46099,7 +46632,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -46213,6 +46746,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.concurrent_change",
@@ -46264,7 +46798,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -46348,6 +46882,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "request.body_too_large",
           "request.internal_error",
@@ -46443,7 +46978,7 @@
                 }
               }
             },
-            "description": "access.forbidden, access.org_host_required, access.org_suspended"
+            "description": "access.forbidden, access.org_host_required, access.org_suspended, access.org_twofa_required"
           },
           "404": {
             "content": {
@@ -46567,6 +47102,7 @@
           "access.forbidden",
           "access.org_host_required",
           "access.org_suspended",
+          "access.org_twofa_required",
           "access.tenant_resolve_unavailable",
           "idempotency.in_progress",
           "idempotency.key_invalid",
@@ -47309,6 +47845,13 @@
       "type": "urn:bankapi:error:access.org_suspended"
     },
     {
+      "code": "access.org_twofa_required",
+      "doc": "This organization requires two-factor authentication; turn it on for your account first.",
+      "module": "kit",
+      "status": 403,
+      "type": "urn:bankapi:error:access.org_twofa_required"
+    },
+    {
       "code": "access.plugin_inactive",
       "doc": "The plugin is not active on the platform.",
       "module": "kit",
@@ -47349,6 +47892,13 @@
       "module": "admin",
       "status": 403,
       "type": "urn:bankapi:error:admin.totp_invalid"
+    },
+    {
+      "code": "admin.twofa_not_resettable",
+      "doc": "The account's second factor cannot be reset: it has none turned on, or it is not active (the detail says which).",
+      "module": "admin",
+      "status": 409,
+      "type": "urn:bankapi:error:admin.twofa_not_resettable"
     },
     {
       "code": "admin.user_is_admin",
@@ -47440,6 +47990,13 @@
       "module": "auth",
       "status": 401,
       "type": "urn:bankapi:error:auth.refresh_reuse_detected"
+    },
+    {
+      "code": "auth.registration_closed",
+      "doc": "The deployment does not take self-service registration.",
+      "module": "auth",
+      "status": 403,
+      "type": "urn:bankapi:error:auth.registration_closed"
     },
     {
       "code": "auth.reset_token_invalid",
@@ -47909,6 +48466,13 @@
       "module": "customer",
       "status": 409,
       "type": "urn:bankapi:error:customer.not_provisioning"
+    },
+    {
+      "code": "deletion.account_has_dependents",
+      "doc": "Other data depends on the account; remove it first (the detail says what).",
+      "module": "deletion",
+      "status": 409,
+      "type": "urn:bankapi:error:deletion.account_has_dependents"
     },
     {
       "code": "deletion.account_owns_org",
