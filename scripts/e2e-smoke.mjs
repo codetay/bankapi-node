@@ -6,7 +6,7 @@
 //
 // Required (absolute paths): DEV_STACK_DIR, DEV_IMAGE, DEV_SECRETS_HOST.
 // Optional: E2E_ENV_FILE ($DEV_SECRETS_HOST/e2e.env), DEV_DOCKER_CONTEXT
-// (orbstack), SMOKE_BIND (127.0.0.1), SMOKE_PORT (59601), SMOKE_AMOUNT_VND
+// (kiri), SMOKE_BIND (127.0.0.1), SMOKE_PORT (59601), SMOKE_AMOUNT_VND
 // (50000), SMOKE_WAIT_SECONDS (90), SMOKE_QUIET_SECONDS (15), SMOKE_BASE_URL.
 // From the env file it reads only BANKAPI_BASE_URL, BANKAPI_KEY and E2E_CONNECTION_ID.
 // It prints no secret: not the key, not the endpoint secret.
@@ -109,7 +109,7 @@ async function main() {
   const stackDir = process.env.DEV_STACK_DIR;
   const envFile = process.env.E2E_ENV_FILE || join(process.env.DEV_SECRETS_HOST, 'e2e.env');
   const limits = {
-    DEV_DOCKER_CONTEXT: process.env.DEV_DOCKER_CONTEXT || 'orbstack',
+    DEV_DOCKER_CONTEXT: process.env.DEV_DOCKER_CONTEXT || 'kiri',
     SMOKE_BIND: process.env.SMOKE_BIND || '127.0.0.1',
     SMOKE_PORT: positiveInt('SMOKE_PORT', 59601),
     SMOKE_AMOUNT_VND: positiveInt('SMOKE_AMOUNT_VND', 50000),
