@@ -52,13 +52,13 @@ describe('openapi spec lock', () => {
     for (const path of Object.keys(spec.paths)) {
       expect(path.startsWith('/v2/'), `path ${path} is outside /v2/`).toBe(true);
     }
-    expect(spec['x-error-code-registry']).toHaveLength(200);
+    expect(spec['x-error-code-registry']).toHaveLength(204);
     expect(Object.keys(spec.webhooks)).toHaveLength(13);
   });
 
-  // Holds for the R11 pin only; the next pin updates both constants in its sync-spec commit.
-  it('pins the v0.6.0 commits, not the tag objects', () => {
-    expect(lock.apirs_ref).toBe('06979f3b48cdb1aab1919454e27e757e1b64fcb5');
-    expect(lock.kitrs_ref).toBe('817221528a600f7ef8fb1bd0a010bef71cd6bc97');
+  // Holds for the R12 rc pin only; the next pin updates both constants in its sync-spec commit.
+  it('pins the v0.8.0-rc.1 commits, not the tag objects', () => {
+    expect(lock.apirs_ref).toBe('eed0e175527eb423ae6bd91f128a4b7dd947f1a2');
+    expect(lock.kitrs_ref).toBe('63c516e249444b317f649fd03d9370d446c43699');
   });
 });
